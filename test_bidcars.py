@@ -1,5 +1,6 @@
 """
 Запусти: python test_bidcars.py
+Бот заходит в каждый лот, читает фото и данные, потом следующий.
 """
 import time
 import undetected_chromedriver as uc
@@ -7,110 +8,113 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-print("Открываю bid.cars через undetected-chromedriver...")
+print("Открываю bid.cars...")
 options = uc.ChromeOptions()
 options.add_argument("--window-size=1920,1080")
-
 driver = uc.Chrome(options=options, version_main=149)
 
 def js_click(el):
     driver.execute_script("arguments[0].click();", el)
 
+# === ШАГ 1: Поиск Toyota ===
 driver.get("https://bid.cars/en/search")
 time.sleep(5)
 
-print(f"Заголовок: {driver.title}")
-
-# Шаг 1: Type = Automobile
-print("\nШаг 1: Выбираем тип Automobile...")
-try:
-    type_btn = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
-    )
-    js_click(type_btn)
-    time.sleep(1)
-    automobile = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]")
-    js_click(automobile)
-    time.sleep(2)
-    print("  ✅ Тип выбран!")
-except Exception as e:
-    print(f"  ❌ Ошибка: {e}")
-
-# Шаг 2: Make = Toyota
-print("\nШаг 2: Выбираем марку Toyota...")
-try:
-    make_btn = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle"))
-    )
-    js_click(make_btn)
-    time.sleep(1)
-    toyota = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and text()='Toyota']")
-    js_click(toyota)
-    time.sleep(2)
-    print("  ✅ Марка выбрана!")
-except Exception as e:
-    print(f"  ❌ Ошибка: {e}")
-
-# Шаг 3: Search
-print("\nШаг 3: Нажимаем Search...")
-try:
-    search_btn = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
-    )
-    js_click(search_btn)
-    time.sleep(8)
-    print(f"  URL: {driver.current_url}")
-except Exception as e:
-    print(f"  ❌ Ошибка: {e}")
-
-# Скроллим страницу чтобы lazy-load картинки загрузились
-print("\nСкроллим для загрузки фото...")
-for scroll_pos in range(0, 5000, 500):
-    driver.execute_script(f"window.scrollTo(0, {scroll_pos});")
-    time.sleep(0.3)
-driver.execute_script("window.scrollTo(0, 0);")
+# Type
+type_btn = WebDriverWait(driver, 10).until(
+    EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
+)
+js_click(type_btn); time.sleep(1)
+js_click(driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]"))
 time.sleep(2)
 
-driver.save_screenshot("step4_results.png")
-print("Скриншот step4_results.png")
+# Make
+js_click(WebDriverWait(driver, 10).until(
+    EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle"))
+))
+time.sleep(1)
+js_click(driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and text()='Toyota']"))
+time.sleep(2)
 
-# Выводим все img на странице для диагностики
-print("\n--- Все img на странице (первые 10) ---")
-all_imgs = driver.find_elements(By.TAG_NAME, "img")
-for img in all_imgs[:10]:
-    src = img.get_attribute("src") or ""
-    dsrc = img.get_attribute("data-src") or ""
-    lazy = img.get_attribute("data-lazy") or ""
-    cls = img.get_attribute("class") or ""
-    print(f"  src={src[:80]} | data-src={dsrc[:60]} | class={cls[:40]}")
+# Search
+js_click(WebDriverWait(driver, 10).until(
+    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
+))
+time.sleep(8)
+print(f"URL результатов: {driver.current_url}")
 
-# Собираем лоты
-print("\n--- Лоты ---")
-lot_anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
+# Скроллим для загрузки карточек
+for pos in range(0, 4000, 600):
+    driver.execute_script(f"window.scrollTo(0, {pos});")
+    time.sleep(0.2)
+time.sleep(1)
+
+# Собираем ссылки на лоты
+anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
 seen = set()
-lot_data = []
-for a in lot_anchors:
+lot_urls = []
+for a in anchors:
     href = a.get_attribute("href") or ""
     if href and href not in seen and "#" not in href:
         seen.add(href)
-        imgs = a.find_elements(By.TAG_NAME, "img")
-        img_url = ""
-        for img in imgs:
-            for attr in ["src", "data-src", "data-lazy", "data-original"]:
-                src = img.get_attribute(attr) or ""
-                if src and src.startswith("http") and ".svg" not in src and "placeholder" not in src and "logo" not in src:
-                    img_url = src
-                    break
-            if img_url:
-                break
-        text = a.text.strip()[:80]
-        lot_data.append((href, img_url, text))
+        lot_urls.append(href)
 
-print(f"Найдено лотов: {len(lot_data)}")
-for url, img, txt in lot_data[:8]:
-    print(f"\n  URL: {url}")
-    print(f"  Фото: {img[:100] if img else '❌ нет фото'}")
-    print(f"  Текст: {txt}")
+print(f"\nНайдено лотов: {len(lot_urls)}")
+print("Захожу в каждый лот...\n")
+
+# === ШАГ 2: Заходим в каждый лот ===
+results = []
+for i, url in enumerate(lot_urls[:5], 1):
+    print(f"[{i}/5] {url}")
+    driver.get(url)
+    time.sleep(4)
+
+    # Скроллим для загрузки фото
+    for pos in range(0, 2000, 400):
+        driver.execute_script(f"window.scrollTo(0, {pos});")
+        time.sleep(0.2)
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(1)
+
+    # Заголовок
+    title = ""
+    for sel in ["h1", ".lot-title", "[class*='vehicle-title']"]:
+        try:
+            el = driver.find_element(By.CSS_SELECTOR, sel)
+            if el.text.strip():
+                title = el.text.strip()
+                break
+        except Exception:
+            pass
+
+    # Все фото на странице лота
+    images = []
+    for img in driver.find_elements(By.TAG_NAME, "img"):
+        for attr in ["src", "data-src", "data-lazy", "data-original"]:
+            src = img.get_attribute(attr) or ""
+            if (src and src.startswith("http") and ".svg" not in src
+                    and "logo" not in src and "icon" not in src
+                    and "placeholder" not in src and "flag" not in src):
+                if src not in images:
+                    images.append(src)
+                break
+
+    # Текст страницы (цена, год, повреждения)
+    body_text = driver.find_element(By.TAG_NAME, "body").text
+    price_line = next((l for l in body_text.split("\n") if "$" in l and any(c.isdigit() for c in l)), "")
+
+    print(f"  Заголовок: {title}")
+    print(f"  Цена: {price_line.strip()[:60]}")
+    print(f"  Фото ({len(images)}): {images[0][:100] if images else '❌ нет'}")
+    if len(images) > 1:
+        print(f"            {images[1][:100]}")
+
+    driver.save_screenshot(f"lot_{i}.png")
+    results.append({"url": url, "title": title, "images": images[:3]})
+    print()
+
+print(f"\n✅ Готово! Обработано {len(results)} лотов")
+print("Скриншоты: lot_1.png ... lot_5.png")
 
 input("\nНажми Enter чтобы закрыть...")
 driver.quit()
