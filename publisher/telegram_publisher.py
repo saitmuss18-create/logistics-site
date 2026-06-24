@@ -115,7 +115,7 @@ async def send_photo_album(session: aiohttp.ClientSession, chat_id, photo_urls: 
         async with session.post(f"{get_api()}/sendMediaGroup", data=form) as resp:
             result = await resp.json()
             if not result.get("ok"):
-                logger.warning(f"sendMediaGroup ошибка: {result.get('description')}")
+                logger.warning(f"sendMediaGroup ошибка chat_id={chat_id}: {result}")
                 # Fallback — отправляем первое фото
                 await send_photo_bytes(session, chat_id, photos_data[0], caption)
     except Exception as e:
@@ -175,7 +175,7 @@ async def send_message(session: aiohttp.ClientSession, chat_id, text: str):
         ) as resp:
             data = await resp.json()
             if not data.get("ok"):
-                logger.error(f"Telegram ошибка: {data.get('description')}")
+                logger.error(f"Telegram sendMessage ошибка chat_id={chat_id}: {data}")
     except Exception as e:
         logger.error(f"send_message ошибка: {e}")
 
