@@ -135,29 +135,210 @@ def _scrape_sync(brands, models_filter, filters, min_year, conditions_filter):
     return results
 
 
+def _select_iaai_filter(driver, label_text: str, value: str) -> bool:
+    """Выбирает значение в фильтре IAAI по тексту label."""
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+
+    try:
+        # IAAI использует select элементы или кастомные дропдауны
+        # Сначала пробуем стандартный <select>
+        selects = driver.find_elements(By.TAG_NAME, "select")
+        for sel in selects:
+            # Ищем select рядом с нужным label
+            try:
+                sel_id = sel.get_attribute("id") or sel.get_attribute("name") or ""
+                sel_label = ""
+                if sel_id:
+                    try:
+                        lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{sel_id}']")
+                        sel_label = lbl.text.lower()
+                    except Exception:
+                        pass
+                placeholder = (sel.get_attribute("placeholder") or "").lower()
+
+                if label_text.lower() in sel_label or label_text.lower() in placeholder or label_text.lower() in sel_id.lower():
+                    from selenium.webdriver.support.ui import Select
+                    s = Select(sel)
+                    # Точное совпадение
+                    for opt in s.options:
+                        if opt.text.strip().lower() == value.lower():
+                            s.select_by_visible_text(opt.text.strip())
+                            time.sleep(1)
+                            logger.info(f"IAAI: выбрал {label_text}={value} через <select>")
+                            return True
+                    # Частичное
+                    for opt in s.options:
+                        if value.lower() in opt.text.lower():
+                            s.select_by_visible_text(opt.text.strip())
+                            time.sleep(1)
+                            logger.info(f"IAAI: выбрал {label_text}≈{value} через <select>")
+                            return True
+            except Exception:
+                pass
+
+        # Пробуем кастомные дропдауны (li/div с текстом)
+        # Ищем кнопку-тоггл рядом с label
+        toggles = driver.find_elements(By.CSS_SELECTOR,
+            "button, [role='button'], [role='combobox'], .dropdown-toggle, .filter-toggle")
+        for toggle in toggles:
+            txt = toggle.text.strip().lower()
+            aria = (toggle.get_attribute("aria-label") or "").lower()
+            placeholder = (toggle.get_attribute("placeholder") or "").lower()
+            if label_text.lower() in txt or label_text.lower() in aria or label_text.lower() in placeholder:
+                driver.execute_script("arguments[0].click();", toggle)
+                time.sleep(1.5)
+                # Ищем элементы меню
+                for item_sel in ["li", "[role='option']", ".dropdown-item", ".option"]:
+                    items = driver.find_elements(By.CSS_SELECTOR, item_sel)
+                    for item in items:
+                        if item.text.strip().lower() == value.lower() and item.is_displayed():
+                            driver.execute_script("arguments[0].click();", item)
+                            time.sleep(1)
+                            logger.info(f"IAAI: выбрал {label_text}={value} через кастомный дропдаун")
+                            return True
+                # Закрываем если не нашли
+                driver.execute_script("arguments[0].click();", toggle)
+                time.sleep(0.5)
+
+        # XPath fallback
+        els = driver.find_elements(By.XPATH,
+            f"//*[contains(text(),'{value}') and (self::li or self::option or self::div[@role='option'])]")
+        for el in els:
+            if el.is_displayed():
+                driver.execute_script("arguments[0].click();", el)
+                time.sleep(1)
+                logger.info(f"IAAI: выбрал {value} через XPath")
+                return True
+
+    except Exception as e:
+        logger.debug(f"IAAI _select_filter {label_text}={value}: {e}")
+    return False
+
+
+def _set_iaai_year(driver, min_year: int):
+    """Устанавливает год 'From' в фильтрах IAAI."""
+    from selenium.webdriver.common.by import By
+    try:
+        all_inputs = driver.find_elements(By.TAG_NAME, "input")
+        for inp in all_inputs:
+            ph = (inp.get_attribute("placeholder") or "").lower()
+            nm = (inp.get_attribute("name") or "").lower()
+            itype = inp.get_attribute("type") or ""
+            if ("year" in ph and "from" in ph) or "yearfrom" in nm or "year_from" in nm or ph == "from":
+                driver.execute_script("arguments[0].value = arguments[1];", inp, str(min_year))
+                driver.execute_script("arguments[0].dispatchEvent(new Event('input',{bubbles:true}));", inp)
+                driver.execute_script("arguments[0].dispatchEvent(new Event('change',{bubbles:true}));", inp)
+                logger.info(f"IAAI: год от {min_year} установлен")
+                time.sleep(0.5)
+                return
+
+        # Пробуем через select с годами
+        selects = driver.find_elements(By.TAG_NAME, "select")
+        for sel in selects:
+            nm = (sel.get_attribute("name") or "").lower()
+            sel_id = (sel.get_attribute("id") or "").lower()
+            if "yearfrom" in nm or "year_from" in nm or "yearfrom" in sel_id:
+                from selenium.webdriver.support.ui import Select
+                s = Select(sel)
+                for opt in s.options:
+                    if opt.get_attribute("value") == str(min_year) or opt.text.strip() == str(min_year):
+                        s.select_by_value(opt.get_attribute("value"))
+                        logger.info(f"IAAI: год от {min_year} выбран через <select>")
+                        time.sleep(0.5)
+                        return
+
+        logger.warning(f"IAAI: поле года не найдено")
+    except Exception as e:
+        logger.warning(f"IAAI: ошибка ввода года: {e}")
+
+
 def _get_lot_urls(driver, brand, model, min_year) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    url = f"https://www.iaai.com/Search#make={brand.upper()}&yearFrom={min_year}"
-    if model:
-        url += f"&model={model.upper().replace(' ', '%20')}"
-
-    driver.get(url)
+    driver.get("https://www.iaai.com/Search")
     time.sleep(8)
 
-    logger.info(f"IAAI: title='{driver.title[:50]}', ссылок всего: {len(driver.find_elements(By.TAG_NAME, 'a'))}")
+    logger.info(f"IAAI: title='{driver.title[:60]}'")
+    logger.info(f"IAAI: всего ссылок на странице: {len(driver.find_elements(By.TAG_NAME, 'a'))}")
+    logger.info(f"IAAI: всего select: {len(driver.find_elements(By.TAG_NAME, 'select'))}")
+    logger.info(f"IAAI: всего input: {len(driver.find_elements(By.TAG_NAME, 'input'))}")
 
-    # Ждём загрузки результатов
-    for sel in ["a[href*='/VehicleDetail/']", "a[href*='/vehicledetail/']",
-                ".vehicle-card a", ".result-item a", "[data-vehicle-id]"]:
+    # Порядок: 1. Марка → 2. Год → 3. Модель → 4. Поиск
+
+    # 1. Марка
+    ok = _select_iaai_filter(driver, "make", brand)
+    if not ok:
+        ok = _select_iaai_filter(driver, "марка", brand)
+    if not ok:
+        # Пробуем напрямую через select без label
         try:
-            WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
-            logger.info(f"IAAI: нашли элементы по '{sel}'")
+            selects = driver.find_elements(By.TAG_NAME, "select")
+            for sel in selects:
+                from selenium.webdriver.support.ui import Select
+                s = Select(sel)
+                for opt in s.options:
+                    if opt.text.strip().lower() == brand.lower():
+                        s.select_by_visible_text(opt.text.strip())
+                        ok = True
+                        logger.info(f"IAAI: марка {brand} выбрана напрямую")
+                        time.sleep(1)
+                        break
+                if ok:
+                    break
+        except Exception:
+            pass
+
+    if not ok:
+        logger.warning(f"IAAI: не удалось выбрать марку {brand}")
+        return []
+
+    time.sleep(1)
+
+    # 2. Год
+    _set_iaai_year(driver, min_year)
+
+    # 3. Модель
+    if model:
+        _select_iaai_filter(driver, "model", model)
+        time.sleep(1)
+
+    # 4. Кнопка поиска
+    search_clicked = False
+    for sel in [
+        "button[type='submit']", "input[type='submit']",
+        "button.search-btn", "button.btn-search",
+        "button[class*='search']", "#searchButton", ".search-button",
+    ]:
+        try:
+            btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
+            driver.execute_script("arguments[0].click();", btn)
+            search_clicked = True
+            logger.info(f"IAAI: нажали поиск через '{sel}'")
             break
         except Exception:
             pass
+
+    if not search_clicked:
+        # XPath по тексту кнопки
+        try:
+            for txt in ["Search", "Найти", "Go"]:
+                btns = driver.find_elements(By.XPATH, f"//button[contains(text(),'{txt}')] | //input[@value='{txt}']")
+                for btn in btns:
+                    if btn.is_displayed():
+                        driver.execute_script("arguments[0].click();", btn)
+                        search_clicked = True
+                        logger.info(f"IAAI: нажали кнопку '{txt}'")
+                        break
+                if search_clicked:
+                    break
+        except Exception:
+            pass
+
+    time.sleep(8)
 
     all_urls = []
     page = 1
@@ -170,8 +351,10 @@ def _get_lot_urls(driver, brand, model, min_year) -> list[str]:
 
         seen_href = set()
         page_urls = []
-        for sel in ["a[href*='/VehicleDetail/']", "a[href*='/vehicledetail/']",
-                    "a[href*='/lot/']", "a[href*='/Lot/']"]:
+        for sel in [
+            "a[href*='/VehicleDetail/']", "a[href*='/vehicledetail/']",
+            "a[href*='/lot/']", "a[href*='/Lot/']",
+        ]:
             for a in driver.find_elements(By.CSS_SELECTOR, sel):
                 href = (a.get_attribute("href") or "").split("?")[0].rstrip("/")
                 if href and href not in seen_href and href not in all_urls:
@@ -185,8 +368,9 @@ def _get_lot_urls(driver, brand, model, min_year) -> list[str]:
             break
 
         next_found = False
-        try:
-            for sel in ["a[aria-label='Next page']", "li.next a", ".pagination a[rel='next']"]:
+        for sel in ["a[aria-label='Next page']", "li.next a", ".pagination a[rel='next']",
+                    "button[aria-label='Next']"]:
+            try:
                 for btn in driver.find_elements(By.CSS_SELECTOR, sel):
                     href = btn.get_attribute("href") or ""
                     if href and href != driver.current_url:
@@ -195,35 +379,16 @@ def _get_lot_urls(driver, brand, model, min_year) -> list[str]:
                         next_found = True
                         page += 1
                         break
-                if next_found:
-                    break
-        except Exception:
-            pass
-
-        if not next_found:
-            try:
-                from selenium.webdriver.common.by import By as B
-                for txt in ["Next", "›", "»"]:
-                    els = driver.find_elements(B.XPATH,
-                        f"//a[normalize-space()='{txt}'] | //button[normalize-space()='{txt}']")
-                    for el in els:
-                        if el.is_displayed():
-                            try:
-                                href = el.get_attribute("href") or ""
-                                if href:
-                                    driver.get(href)
-                                else:
-                                    el.click()
-                                time.sleep(6)
-                                next_found = True
-                                page += 1
-                                break
-                            except Exception:
-                                pass
-                    if next_found:
+                    elif btn.is_displayed() and btn.is_enabled():
+                        btn.click()
+                        time.sleep(6)
+                        next_found = True
+                        page += 1
                         break
             except Exception:
                 pass
+            if next_found:
+                break
 
         if not next_found:
             break
