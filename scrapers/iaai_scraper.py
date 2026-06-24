@@ -1,3 +1,7 @@
+"""
+IAAI scraper — использует сохранённые куки + Selenium для поиска.
+Куки обновляются через кнопку в админ-боте.
+"""
 import asyncio
 import json
 import logging
@@ -45,6 +49,7 @@ def _scrape_sync(brands, models_filter, filters, min_year, conditions_filter):
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from cookie_manager import load_cookies, save_cookies
 
     seen = _load_seen()
     new_seen = set()
@@ -53,6 +58,30 @@ def _scrape_sync(brands, models_filter, filters, min_year, conditions_filter):
 
     try:
         driver = get_driver()
+
+        # Загружаем сохранённые куки и добавляем в браузер
+        cookies = load_cookies("iaai")
+        if not cookies:
+            logger.info("IAAI: нет куки — открываю сайт для получения...")
+            driver.get("https://www.iaai.com/")
+            time.sleep(15)
+            raw = driver.get_cookies()
+            from pathlib import Path as P
+            import json as J
+            from datetime import datetime as DT
+            data = {"site": "iaai", "url": "https://www.iaai.com/", "saved_at": DT.now().isoformat(), "cookies": raw}
+            (P("cookies") / "iaai.json").write_text(J.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            cookies = {c["name"]: c["value"] for c in raw}
+            logger.info(f"IAAI: автоматически получено {len(cookies)} куки")
+        else:
+            # Инжектируем куки в браузер
+            driver.get("https://www.iaai.com/")
+            time.sleep(4)
+            for name, value in cookies.items():
+                try:
+                    driver.add_cookie({"name": name, "value": value, "domain": ".iaai.com"})
+                except Exception:
+                    pass
 
         for brand in brands:
             brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
@@ -106,36 +135,25 @@ def _scrape_sync(brands, models_filter, filters, min_year, conditions_filter):
     return results
 
 
-def _get_lot_urls(driver, brand: str, model: str, min_year: int) -> list[str]:
+def _get_lot_urls(driver, brand, model, min_year) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    # IAAI поиск: фильтры через URL hash или форму
-    search_url = f"https://www.iaai.com/Search#make={brand.upper()}&yearFrom={min_year}"
+    url = f"https://www.iaai.com/Search#make={brand.upper()}&yearFrom={min_year}"
     if model:
-        search_url += f"&model={model.upper()}"
+        url += f"&model={model.upper().replace(' ', '%20')}"
 
-    driver.get(search_url)
+    driver.get(url)
     time.sleep(8)
 
-    # Логируем что загрузилось
-    logger.info(f"IAAI: title='{driver.title}', url={driver.current_url[:80]}")
+    logger.info(f"IAAI: title='{driver.title[:50]}', ссылок всего: {len(driver.find_elements(By.TAG_NAME, 'a'))}")
 
-    # Ждём появления результатов
-    for sel in [
-        "a[href*='/VehicleDetail/']",
-        "a[href*='/vehicledetail/']",
-        ".vehicle-card",
-        ".result-card",
-        "[data-vehicle-id]",
-        "table.lot-list tr",
-        ".search-results li",
-    ]:
+    # Ждём загрузки результатов
+    for sel in ["a[href*='/VehicleDetail/']", "a[href*='/vehicledetail/']",
+                ".vehicle-card a", ".result-item a", "[data-vehicle-id]"]:
         try:
-            WebDriverWait(driver, 8).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, sel))
-            )
+            WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
             logger.info(f"IAAI: нашли элементы по '{sel}'")
             break
         except Exception:
@@ -150,40 +168,26 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int) -> list[str]:
             time.sleep(0.15)
         time.sleep(2)
 
-        # Пробуем разные форматы ссылок IAAI
         seen_href = set()
         page_urls = []
-        for sel in [
-            "a[href*='/VehicleDetail/']",
-            "a[href*='/vehicledetail/']",
-            "a[href*='/lot/']",
-            "a[href*='/Lot/']",
-        ]:
+        for sel in ["a[href*='/VehicleDetail/']", "a[href*='/vehicledetail/']",
+                    "a[href*='/lot/']", "a[href*='/Lot/']"]:
             for a in driver.find_elements(By.CSS_SELECTOR, sel):
-                href = a.get_attribute("href") or ""
-                href = href.split("?")[0].rstrip("/")
+                href = (a.get_attribute("href") or "").split("?")[0].rstrip("/")
                 if href and href not in seen_href and href not in all_urls:
                     seen_href.add(href)
                     page_urls.append(href)
 
         all_urls.extend(page_urls)
-        logger.info(f"IAAI: стр.{page} для {brand} — {len(page_urls)} лотов, всего: {len(all_anchors_debug(driver))}")
+        logger.info(f"IAAI: стр.{page} для {brand} — {len(page_urls)} лотов")
 
         if not page_urls:
             break
 
-        # Следующая страница
         next_found = False
-        for sel in [
-            "a[aria-label='Next page']",
-            "a[aria-label='next']",
-            "li.next a",
-            ".pagination a[rel='next']",
-            "button[aria-label='Next']",
-        ]:
-            try:
-                btns = driver.find_elements(By.CSS_SELECTOR, sel)
-                for btn in btns:
+        try:
+            for sel in ["a[aria-label='Next page']", "li.next a", ".pagination a[rel='next']"]:
+                for btn in driver.find_elements(By.CSS_SELECTOR, sel):
                     href = btn.get_attribute("href") or ""
                     if href and href != driver.current_url:
                         driver.get(href)
@@ -191,36 +195,31 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int) -> list[str]:
                         next_found = True
                         page += 1
                         break
-                    # Кнопка без href — кликаем
-                    if btn.is_displayed() and btn.is_enabled():
-                        btn.click()
-                        time.sleep(6)
-                        next_found = True
-                        page += 1
-                        break
-            except Exception:
-                pass
-            if next_found:
-                break
+                if next_found:
+                    break
+        except Exception:
+            pass
 
         if not next_found:
-            # Ищем по тексту
             try:
                 from selenium.webdriver.common.by import By as B
-                for txt in ["Next", "›", "»", "Следующая"]:
+                for txt in ["Next", "›", "»"]:
                     els = driver.find_elements(B.XPATH,
                         f"//a[normalize-space()='{txt}'] | //button[normalize-space()='{txt}']")
                     for el in els:
                         if el.is_displayed():
-                            href = el.get_attribute("href") or ""
-                            if href:
-                                driver.get(href)
-                            else:
-                                el.click()
-                            time.sleep(6)
-                            next_found = True
-                            page += 1
-                            break
+                            try:
+                                href = el.get_attribute("href") or ""
+                                if href:
+                                    driver.get(href)
+                                else:
+                                    el.click()
+                                time.sleep(6)
+                                next_found = True
+                                page += 1
+                                break
+                            except Exception:
+                                pass
                     if next_found:
                         break
             except Exception:
@@ -233,16 +232,7 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int) -> list[str]:
     return all_urls
 
 
-def all_anchors_debug(driver) -> list:
-    """Отладка: возвращаем все ссылки на странице."""
-    from selenium.webdriver.common.by import By
-    try:
-        return driver.find_elements(By.TAG_NAME, "a")
-    except Exception:
-        return []
-
-
-def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> dict | None:
+def _parse_lot_page(driver, url, brand, min_year, fmt_timer) -> dict | None:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
@@ -252,7 +242,7 @@ def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> d
 
     try:
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "h1, .vehicle-title, .lot-title"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "h1, .vehicle-title"))
         )
     except Exception:
         pass
@@ -261,16 +251,11 @@ def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> d
         driver.execute_script(f"window.scrollTo(0, {pos});")
         time.sleep(0.1)
     driver.execute_script("window.scrollTo(0, 0);")
-    time.sleep(0.5)
 
     body_text = driver.find_element(By.TAG_NAME, "body").text
 
-    # Заголовок
     title = brand
-    for sel in [
-        "h1.vehicle-title", "h1.lot-title", ".vehicle-info h1",
-        ".lot-details h1", "h1", ".vehicle-name"
-    ]:
+    for sel in ["h1.vehicle-title", "h1", ".lot-title", ".vehicle-name"]:
         try:
             t = driver.find_element(By.CSS_SELECTOR, sel).text.strip()
             if t and len(t) > 3:
@@ -279,22 +264,16 @@ def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> d
         except Exception:
             pass
 
-    # Год
     year = datetime.now().year
     for word in title.split():
         if word.isdigit() and 2000 <= int(word) <= datetime.now().year:
             year = int(word)
             break
-
     if year < min_year:
         return None
 
-    # Цена
     price = 0.0
-    for sel in [
-        ".current-bid-amount", ".bid-amount", "[class*='current-bid']",
-        ".price", "[data-cy='current-bid']"
-    ]:
+    for sel in [".current-bid-amount", ".bid-amount", "[class*='current-bid']", ".price"]:
         try:
             t = driver.find_element(By.CSS_SELECTOR, sel).text
             nums = "".join(c for c in t if c.isdigit() or c == ".")
@@ -303,7 +282,6 @@ def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> d
                 break
         except Exception:
             pass
-
     if price == 0:
         for line in body_text.split("\n"):
             if "$" in line:
@@ -317,48 +295,30 @@ def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> d
                     except Exception:
                         pass
 
-    # Повреждения — IAAI показывает "Primary Damage" и "Secondary Damage"
     damage = "Нет данных"
-    for line in body_text.split("\n"):
-        ll = line.lower().strip()
-        if "primary damage" in ll or "основное повреждение" in ll:
-            lines = body_text.split("\n")
-            idx = lines.index(line) if line in lines else -1
-            if idx >= 0 and idx + 1 < len(lines):
-                val = lines[idx + 1].strip()
-                if val and len(val) < 80:
-                    damage = val
-                    break
+    lines = body_text.split("\n")
+    for i, line in enumerate(lines):
+        if "primary damage" in line.lower():
+            if i + 1 < len(lines) and lines[i + 1].strip():
+                damage = lines[i + 1].strip()
+                break
 
-    # Пробег
     odometer = ""
-    for line in body_text.split("\n"):
-        ll = line.lower().strip()
-        if "odometer" in ll or "mileage" in ll:
-            lines = body_text.split("\n")
-            idx = lines.index(line) if line in lines else -1
-            if idx >= 0 and idx + 1 < len(lines):
-                val = lines[idx + 1].strip()
-                if val and any(c.isdigit() for c in val):
-                    odometer = val
-                    break
+    for i, line in enumerate(lines):
+        if "odometer" in line.lower() or "mileage" in line.lower():
+            if i + 1 < len(lines) and any(c.isdigit() for c in lines[i + 1]):
+                odometer = lines[i + 1].strip()
+                break
 
-    # Дата аукциона
     sale_dt = None
     sale_date_str = ""
     timer_str = ""
-    for line in body_text.split("\n"):
-        ll = line.lower().strip()
-        if "sale date" in ll or "auction date" in ll:
-            lines = body_text.split("\n")
-            idx = lines.index(line) if line in lines else -1
-            if idx >= 0 and idx + 1 < len(lines):
-                d = lines[idx + 1].strip()
-                for fmt in (
-                    "%m/%d/%Y %I:%M %p", "%m/%d/%Y",
-                    "%b %d, %Y %I:%M %p", "%b %d, %Y",
-                    "%Y-%m-%d %H:%M", "%Y-%m-%d",
-                ):
+    for i, line in enumerate(lines):
+        if "sale date" in line.lower() or "auction date" in line.lower():
+            if i + 1 < len(lines):
+                d = lines[i + 1].strip()
+                for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y", "%b %d, %Y %I:%M %p",
+                            "%b %d, %Y", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
                     try:
                         sale_dt = datetime.strptime(d, fmt)
                         break
@@ -373,28 +333,16 @@ def _parse_lot_page(driver, url: str, brand: str, min_year: int, fmt_timer) -> d
         sale_date_str = sale_dt.strftime("%d.%m.%Y %H:%M")
         timer_str = fmt_timer(sale_dt)
 
-    # Фото
     images = []
-    for sel in [
-        "img[src*='iaai.com']", "img[src*='iaa']",
-        ".vehicle-images img", "#vehicle-images img",
-        ".image-gallery img", ".carousel img",
-        "img[class*='vehicle']", "img[class*='lot']",
-    ]:
+    for sel in ["img[src*='iaai']", "img[src*='iaa']", ".vehicle-images img",
+                ".image-gallery img", ".carousel img"]:
         try:
             for img in driver.find_elements(By.CSS_SELECTOR, sel):
-                for attr in ["src", "data-src"]:
-                    src = img.get_attribute(attr) or ""
-                    if src and len(src) > 10 and src not in images:
-                        images.append(src)
+                src = img.get_attribute("src") or img.get_attribute("data-src") or ""
+                if src and len(src) > 10 and src not in images:
+                    images.append(src)
         except Exception:
             pass
-
-    if not images:
-        for img in driver.find_elements(By.TAG_NAME, "img"):
-            src = img.get_attribute("src") or ""
-            if src and any(x in src for x in ["iaai", "iaa", "vehicle", "lot"]) and src not in images:
-                images.append(src)
 
     return {
         "source": "IAAI",

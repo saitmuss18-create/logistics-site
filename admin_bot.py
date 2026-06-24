@@ -103,13 +103,28 @@ async def answer_callback(session, callback_id):
 
 def main_menu_keyboard():
     s = load_settings()
-    sources = s.get("sources", ["bid.cars", "Copart"])
+    sources = s.get("sources", ["bid.cars", "Copart", "IAAI"])
     src_label = " + ".join(sources) if sources else "не выбрано"
+    from cookie_manager import cookies_age
+    copart_age = cookies_age("copart")
+    iaai_age = cookies_age("iaai")
     return [
         [{"text": "⚙️ Фильтры", "callback_data": "menu_filters"}],
         [{"text": f"🌐 Источники: {src_label}", "callback_data": "set_sources"}],
         [{"text": "🚀 Запустить сейчас", "callback_data": "menu_run"}],
         [{"text": "📊 Текущие настройки", "callback_data": "menu_status"}],
+        [{"text": "🍪 Обновить куки сайтов", "callback_data": "menu_cookies"}],
+    ]
+
+
+def cookies_keyboard():
+    from cookie_manager import cookies_age
+    copart_age = cookies_age("copart")
+    iaai_age = cookies_age("iaai")
+    return [
+        [{"text": f"🔄 Copart ({copart_age})", "callback_data": "refresh_cookies_copart"}],
+        [{"text": f"🔄 IAAI ({iaai_age})", "callback_data": "refresh_cookies_iaai"}],
+        [{"text": "◀️ Назад", "callback_data": "menu_back"}],
     ]
 
 
@@ -329,6 +344,28 @@ async def handle_callback(session, cb):
             s["sources"] = srcs
             save_settings(s)
         await edit(session, chat_id, msg_id, "🌐 *Выбери источники поиска:*", sources_keyboard())
+
+    elif data == "menu_cookies":
+        await edit(session, chat_id, msg_id,
+                   "🍪 *Обновление куки*\n\nНажми кнопку — откроется браузер на твоём компьютере.\nЕсли нужно — пройди капчу. Бот подождёт 20 сек и сохранит куки.",
+                   cookies_keyboard())
+
+    elif data.startswith("refresh_cookies_"):
+        site = data[len("refresh_cookies_"):]
+        await send(session, chat_id,
+                   f"🌐 Открываю *{site.upper()}* в браузере...\n⏳ Жди 20 секунд, не закрывай браузер!")
+        loop = asyncio.get_event_loop()
+        from cookie_manager import save_cookies
+        ok = await loop.run_in_executor(None, save_cookies, site)
+        if ok:
+            from cookie_manager import cookies_age
+            age = cookies_age(site)
+            await send(session, chat_id,
+                       f"✅ Куки *{site.upper()}* сохранены ({age})\nТеперь можно запускать поиск!")
+        else:
+            await send(session, chat_id,
+                       f"❌ Не удалось сохранить куки для *{site.upper()}*. Попробуй ещё раз.")
+        await send(session, chat_id, "Главное меню:", main_menu_keyboard())
 
     elif data == "menu_run":
         await edit(session, chat_id, msg_id, "🚀 *Запускаю поиск...*", None)

@@ -1,7 +1,6 @@
 """
-Copart scraper — использует bid.cars с фильтром источника Copart.
-bid.cars агрегирует лоты с Copart, IAAI и других аукционов,
-поэтому надёжнее скрапить через него (уже обходит Cloudflare).
+Copart scraper — использует сохранённые куки для API запросов.
+Куки обновляются через кнопку в админ-боте (один раз в 7 дней).
 """
 import asyncio
 import json
@@ -10,9 +9,29 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import aiohttp
+
 logger = logging.getLogger(__name__)
 
 SEEN_FILE = Path("seen_copart.json")
+
+BASE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.copart.com",
+    "Referer": "https://www.copart.com/",
+    "Content-Type": "application/json",
+}
+
+VEHTYPE_MAP = {
+    "Автомобиль": "VEHTYPE_V",
+    "Мотоцикл":   "VEHTYPE_B",
+    "ATV":         "VEHTYPE_A",
+    "Гидроцикл":  "VEHTYPE_P",
+    "Снегоход":   "VEHTYPE_N",
+    "Лодка":       "VEHTYPE_W",
+}
 
 
 def _load_seen() -> set:
@@ -40,30 +59,26 @@ async def scrape_copart(settings: dict = None) -> list[dict]:
     min_year = datetime.now().year - max_year_age
     vehicle_types = s.get("vehicle_types", ["Автомобиль"])
     conditions_filter = s.get("conditions", [])
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None, _scrape_sync, brands, models_filter, s, min_year, vehicle_types, conditions_filter
-    )
 
+    # Загружаем сохранённые куки
+    from cookie_manager import load_cookies, save_cookies
+    cookies = load_cookies("copart")
 
-def _scrape_sync(brands, models_filter, filters, min_year, vehicle_types, conditions_filter):
-    from scrapers.bidcars_scraper import get_driver, _js_click, _select_dropdown, _set_year, _format_timer
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
+    if not cookies:
+        logger.warning("Copart: нет куки — запускаю автоматическое получение...")
+        loop = asyncio.get_event_loop()
+        ok = await loop.run_in_executor(None, save_cookies, "copart")
+        if ok:
+            cookies = load_cookies("copart")
+        if not cookies:
+            logger.error("Copart: не удалось получить куки, пропускаем")
+            return []
 
     seen = _load_seen()
     new_seen = set()
-    results = []
-    driver = None
+    all_cars = []
 
-    # Тип ТС → название на bid.cars для фильтра источника
-    # bid.cars показывает лоты из разных аукционов, фильтруем по "Copart" в URL лота
-    COPART_MARKER = "copart.com"
-
-    try:
-        driver = get_driver()
-
+    async with aiohttp.ClientSession(headers=BASE_HEADERS, cookies=cookies) as session:
         for brand in brands:
             brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
             search_list = brand_models if brand_models else [None]
@@ -71,160 +86,168 @@ def _scrape_sync(brands, models_filter, filters, min_year, vehicle_types, condit
             for model in search_list:
                 label = f"{brand} {model}".strip() if model else brand
                 try:
-                    lot_urls = _get_lot_urls_bidcars(
-                        driver, vehicle_types, brand, model, min_year
-                    )
-                    # Оставляем только лоты Copart (у bid.cars они содержат copart в URL или источнике)
-                    copart_urls = [u for u in lot_urls if "copart" in u.lower()]
-                    if not copart_urls:
-                        # bid.cars может не разделять источники в URL — берём все, помечаем
-                        copart_urls = lot_urls
+                    type_codes = [VEHTYPE_MAP[v] for v in vehicle_types if v in VEHTYPE_MAP]
+                    lot_nums = await _search_lots(session, brand, model, min_year, type_codes)
+                    new_lots = [n for n in lot_nums if f"copart_{n}" not in seen]
+                    logger.info(f"Copart: {label} — {len(lot_nums)} лотов, новых: {len(new_lots)}")
 
-                    new_urls = [u for u in copart_urls if u not in seen]
-                    logger.info(f"Copart/bid.cars: {label} — {len(lot_urls)} лотов, Copart: {len(copart_urls)}, новых: {len(new_urls)}")
-
-                    cars = []
-                    for url in new_urls[:15]:
+                    for lot_num in new_lots[:20]:
                         try:
-                            from scrapers.bidcars_scraper import _parse_lot_page
-                            car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
+                            car = await _get_lot_detail(session, lot_num, brand, min_year)
                             if car:
-                                car["source"] = "Copart"
                                 if conditions_filter:
                                     from publisher.telegram_publisher import classify_condition
                                     cond = classify_condition(car.get("damage", ""))
                                     if not any(cond == f or f in cond or cond in f for f in conditions_filter):
-                                        new_seen.add(url)
-                                        time.sleep(0.5)
+                                        new_seen.add(f"copart_{lot_num}")
+                                        await asyncio.sleep(0.3)
                                         continue
-                                cars.append(car)
-                                new_seen.add(url)
-                            time.sleep(1.5)
+                                all_cars.append(car)
+                                new_seen.add(f"copart_{lot_num}")
+                            await asyncio.sleep(0.5)
                         except Exception as e:
-                            logger.debug(f"Copart лот {url}: {e}")
+                            logger.debug(f"Copart лот {lot_num}: {e}")
 
-                    logger.info(f"Copart: подходящих {len(cars)} для {label}")
-                    results.extend(cars)
-                    time.sleep(2)
+                    await asyncio.sleep(2)
                 except Exception as e:
                     logger.error(f"Copart {label}: {e}")
-
-    except Exception as e:
-        logger.error(f"Copart Selenium: {e}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
 
     seen.update(new_seen)
     if len(seen) > 5000:
         seen = set(list(seen)[-5000:])
     _save_seen(seen)
-    logger.info(f"Copart: итого {len(results)} новых авто")
-    return results
+    logger.info(f"Copart: итого {len(all_cars)} новых авто")
+    return all_cars
 
 
-def _get_lot_urls_bidcars(driver, vehicle_types, brand, model, min_year):
-    """Ищет лоты на bid.cars с фильтром аукциона Copart."""
-    from scrapers.bidcars_scraper import (
-        _select_type_dropdown, _set_year, _select_dropdown, _js_click
-    )
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-
-    # Используем bid.cars с параметром auction=copart
+async def _search_lots(session, brand, model, min_year, type_codes) -> list[str]:
     query = f"{brand} {model}".strip() if model else brand
-    # bid.cars позволяет фильтровать по аукциону через URL
-    url = f"https://bid.cars/ru/search?auction=copart&make={brand.lower()}"
-    if model:
-        url += f"&model={model.lower()}"
+    filters = {}
+    if type_codes:
+        filters["VEHTYPE"] = {"operation": "IN", "values": type_codes}
 
-    driver.get(url)
-    time.sleep(6)
+    payload = {
+        "query": [query],
+        "filter": filters,
+        "sort": ["auction_date_type desc"],
+        "size": 100,
+        "start": 0,
+        "freeFormSearch": True,
+        "yearFrom": str(min_year),
+        "yearTo": str(datetime.now().year),
+    }
 
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".dropdown-toggle, a[href*='/lot/']"))
-        )
-    except Exception:
-        pass
+    lot_nums = []
+    page = 0
+    while page < 10:
+        payload["start"] = page * 100
+        try:
+            async with session.post(
+                "https://api.copart.com/v2/public/lots/search",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 403:
+                    logger.warning(f"Copart API 403 для {query} — куки устарели, нужно обновить через бот")
+                    break
+                if resp.status != 200:
+                    logger.warning(f"Copart API {resp.status} для {query}")
+                    break
+                data = await resp.json()
 
-    # Если форма есть — заполняем
-    try:
-        _set_year(driver, min_year)
-    except Exception:
-        pass
-
-    time.sleep(2)
-
-    # Если после URL-запроса форма пустая — пробуем через форму поиска
-    anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
-    if not anchors:
-        # Fallback: обычный поиск bid.cars без фильтра Copart
-        driver.get("https://bid.cars/ru/search")
-        time.sleep(6)
-        for vtype in vehicle_types:
-            try:
-                _select_type_dropdown(driver, vtype)
+            content = data.get("data", {}).get("results", {}).get("content", [])
+            if not content:
                 break
+
+            for lot in content:
+                num = str(lot.get("ln", ""))
+                year = int(lot.get("y", 0) or 0)
+                if num and year >= min_year:
+                    lot_nums.append(num)
+
+            total = data.get("data", {}).get("results", {}).get("totalElements", 0)
+            if len(lot_nums) >= total or len(content) < 100:
+                break
+            page += 1
+            await asyncio.sleep(1)
+
+        except Exception as e:
+            logger.error(f"Copart API {query}: {e}")
+            break
+
+    return lot_nums
+
+
+async def _get_lot_detail(session, lot_num, brand, min_year) -> dict | None:
+    from scrapers.bidcars_scraper import _format_timer
+    try:
+        async with session.get(
+            f"https://api.copart.com/v2/public/lots/{lot_num}",
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+
+        lot = data.get("data", {})
+        if not lot:
+            return None
+
+        year = int(lot.get("y", 0) or 0)
+        if year and year < min_year:
+            return None
+
+        make = lot.get("mk", brand) or brand
+        model_name = lot.get("m", "") or ""
+        title = f"{year} {make} {model_name}".strip()
+
+        price = float(lot.get("la", 0) or 0)
+        damage = lot.get("dd", "") or lot.get("dsd", "") or "Нет данных"
+
+        odo = lot.get("orr") or lot.get("od") or ""
+        unit = lot.get("omu", "mi") or "mi"
+        odometer = f"{int(odo):,} {unit}" if odo else ""
+
+        sale_dt = None
+        sale_date_str = ""
+        timer_str = ""
+        sale_ts = lot.get("ad") or lot.get("sed")
+        if sale_ts:
+            try:
+                sale_dt = datetime.fromtimestamp(sale_ts / 1000)
+                if sale_dt.date() < datetime.now().date():
+                    return None
+                sale_date_str = sale_dt.strftime("%d.%m.%Y %H:%M")
+                timer_str = _format_timer(sale_dt)
             except Exception:
                 pass
-        _set_year(driver, min_year)
-        _select_dropdown(driver, ".search_make_filter .dropdown-toggle", brand)
-        if model:
-            time.sleep(1)
-            _select_dropdown(driver, ".search_model_filter .dropdown-toggle", model)
-        time.sleep(1)
-        try:
-            btn = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
-            )
-            _js_click(driver, btn)
-            time.sleep(8)
-        except Exception:
-            pass
 
-    # Собираем URL лотов
-    all_urls = []
-    page = 1
-    while page <= 10:
-        for pos in range(0, 5000, 600):
-            driver.execute_script(f"window.scrollTo(0, {pos});")
-            time.sleep(0.12)
-        time.sleep(1)
+        images = []
+        tims = lot.get("tims", "")
+        if tims:
+            images.append(f"https://cs.copart.com/v1/AUTH_svc.pdoc00001/{tims}")
+        imgs = lot.get("imgs", {})
+        if isinstance(imgs, dict):
+            for key in ["full", "thumbnail"]:
+                for src in (imgs.get(key) or []):
+                    if isinstance(src, str) and src and src not in images:
+                        images.append(src)
 
-        seen_href = set()
-        page_urls = []
-        for a in driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']"):
-            href = (a.get_attribute("href") or "").split("?")[0].rstrip("/")
-            if href and href not in seen_href and href not in all_urls:
-                seen_href.add(href)
-                page_urls.append(href)
-
-        all_urls.extend(page_urls)
-        if not page_urls:
-            break
-
-        next_found = False
-        try:
-            for btn in driver.find_elements(By.CSS_SELECTOR, "a.page-link, .pagination .next a"):
-                lbl = (btn.text or btn.get_attribute("aria-label") or "").strip().lower()
-                if lbl in ("next", "следующая", "»", ">") or btn.get_attribute("rel") == "next":
-                    href = btn.get_attribute("href") or ""
-                    if href and href != driver.current_url:
-                        driver.get(href)
-                        time.sleep(6)
-                        next_found = True
-                        page += 1
-                        break
-        except Exception:
-            pass
-
-        if not next_found:
-            break
-
-    logger.info(f"Copart/bid.cars: итого {len(all_urls)} URL для {query}")
-    return all_urls
+        return {
+            "source": "Copart",
+            "brand": brand,
+            "title": title,
+            "price": price,
+            "bids": int(lot.get("bc", 0) or 0),
+            "damage": damage,
+            "odometer": odometer,
+            "year": year,
+            "sale_date": sale_date_str,
+            "timer": timer_str,
+            "image": images[0] if images else "",
+            "images": images[:10],
+            "url": f"https://www.copart.com/lot/{lot_num}",
+        }
+    except Exception as e:
+        logger.debug(f"Copart detail {lot_num}: {e}")
+        return None
