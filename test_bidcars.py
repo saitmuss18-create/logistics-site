@@ -20,7 +20,6 @@ driver.get("https://bid.cars/en/search")
 time.sleep(5)
 
 print(f"Заголовок: {driver.title}")
-driver.save_screenshot("step1_loaded.png")
 
 # Шаг 1: Type = Automobile
 print("\nШаг 1: Выбираем тип Automobile...")
@@ -64,18 +63,29 @@ try:
 except Exception as e:
     print(f"  ❌ Ошибка: {e}")
 
+# Скроллим страницу чтобы lazy-load картинки загрузились
+print("\nСкроллим для загрузки фото...")
+for scroll_pos in range(0, 5000, 500):
+    driver.execute_script(f"window.scrollTo(0, {scroll_pos});")
+    time.sleep(0.3)
+driver.execute_script("window.scrollTo(0, 0);")
+time.sleep(2)
+
 driver.save_screenshot("step4_results.png")
 print("Скриншот step4_results.png")
 
-# Ждём лоты
-try:
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/lot/']"))
-    )
-except Exception:
-    time.sleep(3)
+# Выводим все img на странице для диагностики
+print("\n--- Все img на странице (первые 10) ---")
+all_imgs = driver.find_elements(By.TAG_NAME, "img")
+for img in all_imgs[:10]:
+    src = img.get_attribute("src") or ""
+    dsrc = img.get_attribute("data-src") or ""
+    lazy = img.get_attribute("data-lazy") or ""
+    cls = img.get_attribute("class") or ""
+    print(f"  src={src[:80]} | data-src={dsrc[:60]} | class={cls[:40]}")
 
-# Собираем ссылки на лоты
+# Собираем лоты
+print("\n--- Лоты ---")
 lot_anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
 seen = set()
 lot_data = []
@@ -83,22 +93,24 @@ for a in lot_anchors:
     href = a.get_attribute("href") or ""
     if href and href not in seen and "#" not in href:
         seen.add(href)
-        # Фото внутри ссылки
         imgs = a.find_elements(By.TAG_NAME, "img")
         img_url = ""
         for img in imgs:
-            src = img.get_attribute("src") or img.get_attribute("data-src") or ""
-            if src and src.startswith("http") and ".svg" not in src and "placeholder" not in src:
-                img_url = src
+            for attr in ["src", "data-src", "data-lazy", "data-original"]:
+                src = img.get_attribute(attr) or ""
+                if src and src.startswith("http") and ".svg" not in src and "placeholder" not in src and "logo" not in src:
+                    img_url = src
+                    break
+            if img_url:
                 break
-        text = a.text.strip()[:100]
+        text = a.text.strip()[:80]
         lot_data.append((href, img_url, text))
 
-print(f"\nНайдено лотов: {len(lot_data)}")
+print(f"Найдено лотов: {len(lot_data)}")
 for url, img, txt in lot_data[:8]:
     print(f"\n  URL: {url}")
     print(f"  Фото: {img[:100] if img else '❌ нет фото'}")
-    print(f"  Текст: {txt[:80]}")
+    print(f"  Текст: {txt}")
 
 input("\nНажми Enter чтобы закрыть...")
 driver.quit()
