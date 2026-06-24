@@ -123,6 +123,50 @@ def _select_dropdown(driver, btn_selector: str, value: str) -> bool:
     return False
 
 
+def _set_year_input(driver, value: int) -> bool:
+    """Вводит год в поле-спиннер (С / До). Русский сайт использует input, не дропдаун."""
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    # Ищем поле "С" (year from) — первый числовой input в форме поиска
+    selectors = [
+        "input[placeholder='С']",
+        "input[name='year_from']",
+        "input[name='yearFrom']",
+        ".year-from input",
+        ".year_from input",
+        "form input[type='number']:first-of-type",
+    ]
+    for sel in selectors:
+        try:
+            inp = driver.find_element(By.CSS_SELECTOR, sel)
+            inp.click()
+            inp.clear()
+            inp.send_keys(str(value))
+            inp.send_keys(Keys.TAB)
+            time.sleep(0.5)
+            logger.info(f"bid.cars: год от {value} введён в поле ({sel})")
+            return True
+        except Exception:
+            continue
+    # Запасной вариант: ищем все числовые инпуты и берём первый
+    try:
+        inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='number'], input[type='text']")
+        for inp in inputs:
+            ph = (inp.get_attribute("placeholder") or "").strip()
+            nm = (inp.get_attribute("name") or "").lower()
+            if ph in ("С", "с", "From", "from") or "year" in nm or "год" in nm:
+                inp.click()
+                inp.clear()
+                inp.send_keys(str(value))
+                inp.send_keys(Keys.TAB)
+                time.sleep(0.5)
+                logger.info(f"bid.cars: год от {value} введён через перебор (placeholder={ph})")
+                return True
+    except Exception as e:
+        logger.warning(f"bid.cars: не удалось ввести год: {e}")
+    return False
+
+
 def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
@@ -131,21 +175,41 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
     driver.get("https://bid.cars/ru/search")
     time.sleep(5)
 
-    # Тип = Автомобиль
+    # Тип = Автомобиль (уже выбран по умолчанию, но проверяем)
     try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
+        WebDriverWait(driver, 8).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input, select, .dropdown-toggle"))
         )
-        # На русском сайте значение может быть "Автомобиль" или "Automobile"
+        # Пробуем дропдаун типа если есть
         done = _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Автомобиль")
         if not done:
             _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Automobile")
         time.sleep(1)
-    except Exception as e:
-        logger.warning(f"bid.cars тип: {e}")
+    except Exception:
+        pass
+
+    # Год ОТ — сначала пробуем input (русский сайт), потом дропдаун (английский)
+    year_set = _set_year_input(driver, min_year)
+    if not year_set:
+        for sel in [".search_year_from .dropdown-toggle", "[class*='year_from'] .dropdown-toggle"]:
+            if _select_dropdown(driver, sel, str(min_year)):
+                year_set = True
+                break
+    if not year_set:
+        logger.warning(f"bid.cars: год от {min_year} НЕ установлен")
 
     # Марка
     ok = _select_dropdown(driver, ".search_make_filter .dropdown-toggle", brand)
+    if not ok:
+        # Пробуем через select
+        try:
+            from selenium.webdriver.support.ui import Select
+            sel_el = driver.find_element(By.CSS_SELECTOR, "select[name='make'], select[name='brand']")
+            Select(sel_el).select_by_visible_text(brand)
+            ok = True
+            time.sleep(1)
+        except Exception:
+            pass
     if not ok:
         logger.warning(f"bid.cars: не удалось выбрать марку {brand}")
         return []
@@ -155,53 +219,6 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
     if model:
         _select_dropdown(driver, ".search_model_filter .dropdown-toggle", model)
         time.sleep(1)
-
-    # Год ОТ — пробуем все возможные селекторы
-    year_set = False
-    year_selectors = [
-        ".search_year_from .dropdown-toggle",
-        ".year_from .dropdown-toggle",
-        "[class*='year_from'] .dropdown-toggle",
-        "[class*='year-from'] .dropdown-toggle",
-        "[class*='YearFrom'] .dropdown-toggle",
-    ]
-    for sel in year_selectors:
-        if _select_dropdown(driver, sel, str(min_year)):
-            logger.info(f"bid.cars: год от {min_year} установлен (селектор: {sel})")
-            year_set = True
-            break
-
-    if not year_set:
-        # Последняя попытка — ищем все дропдауны и пробуем каждый
-        try:
-            toggles = driver.find_elements(By.CSS_SELECTOR, ".dropdown-toggle")
-            for toggle in toggles:
-                label = toggle.text.strip()
-                if "год" in label.lower() or "year" in label.lower() or label == "" or label == "Все":
-                    _js_click(driver, toggle)
-                    time.sleep(1)
-                    items = driver.find_elements(By.CSS_SELECTOR, ".dropdown-menu.show .dropdown-item")
-                    for item in items:
-                        if item.text.strip() == str(min_year):
-                            _js_click(driver, item)
-                            time.sleep(1)
-                            logger.info(f"bid.cars: год от {min_year} установлен через перебор")
-                            year_set = True
-                            break
-                    if year_set:
-                        break
-                    else:
-                        # Закрываем дропдаун нажав ещё раз
-                        try:
-                            _js_click(driver, toggle)
-                            time.sleep(0.5)
-                        except Exception:
-                            pass
-        except Exception as e:
-            logger.warning(f"bid.cars: перебор дропдаунов года: {e}")
-
-    if not year_set:
-        logger.warning(f"bid.cars: год от {min_year} НЕ установлен")
 
     # Кнопка поиска
     try:
