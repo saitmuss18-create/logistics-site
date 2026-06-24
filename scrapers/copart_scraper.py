@@ -158,7 +158,7 @@ async def _search_lots(session: aiohttp.ClientSession, brand: str, model: str,
             async with session.post(
                 "https://api.copart.com/v2/public/lots/search",
                 json=payload,
-                headers={**HEADERS, "Content-Type": "application/json"},
+                headers={**BASE_HEADERS, "Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
                 if resp.status != 200:
