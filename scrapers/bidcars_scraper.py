@@ -52,15 +52,12 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                         except Exception as e:
                             logger.debug(f"bid.cars лот {url}: {e}")
                     logger.info(f"bid.cars: подходящих {len(cars)} для {label}")
-                    results.extend(cars if cars else _get_mock(brand))
+                    results.extend(cars)
                     time.sleep(2)
                 except Exception as e:
                     logger.error(f"bid.cars ошибка {brand}: {e}")
-                    results.extend(_get_mock(brand))
     except Exception as e:
         logger.error(f"bid.cars Selenium: {e}")
-        for b in brands:
-            results.extend(_get_mock(b))
     finally:
         if driver:
             try:
@@ -291,8 +288,13 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
 
 def _is_suitable(car: dict, filters: dict) -> bool:
     y = datetime.now().year
-    return (car["year"] >= y - filters.get("max_year_age", 10)
-            and (car["price"] == 0 or car["price"] <= filters.get("max_price_usd", 20000)))
+    min_year = y - filters.get("max_year_age", 10)
+    max_price = filters.get("max_price_usd", 20000)
+    if car["year"] < min_year:
+        return False
+    if car["price"] > 0 and car["price"] > max_price:
+        return False
+    return True
 
 
 def _get_mock(brand: str) -> list[dict]:
