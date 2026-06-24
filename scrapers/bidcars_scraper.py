@@ -21,7 +21,15 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
             try:
                 params = {"make": brand, "sort": "bids", "order": "desc", "per_page": 10}
                 async with session.get(BIDCARS_API_URL, params=params, timeout=15) as resp:
-                    cars = _parse(await resp.json(), brand, filters) if resp.status == 200 else get_mock(brand)
+                    if resp.status == 200:
+                        data = await resp.json()
+                        logger.info(f"bid.cars RAW keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+                        if isinstance(data, dict):
+                            for k, v in data.items():
+                                logger.info(f"  [{k}] = {str(v)[:200]}")
+                        cars = _parse(data, brand, filters)
+                    else:
+                        cars = get_mock(brand)
                     results.extend(cars)
                     logger.info(f"bid.cars: найдено {len(cars)} лотов для {brand}")
                 await asyncio.sleep(2)
