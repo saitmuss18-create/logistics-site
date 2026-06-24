@@ -22,7 +22,7 @@ async def publish_to_telegram(cars: list[dict]):
             "🚗 *MFR AUTO | ВЫГОДНЫЕ АВТО С АУКЦИОНОВ США*\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 Найдено {len(cars)} выгодных лотов\n"
-            "🔍 Источники: IAAI + Copart + bid.cars\n"
+            "🔍 Источники: Copart + bid.cars\n"
             "🏙 Анализ рынка: Бишкек\n"
             "━━━━━━━━━━━━━━━━━━━━━"
         )
@@ -232,7 +232,12 @@ def format_car_message(car: dict, num: int, for_admin: bool = False) -> str:
         msg += f"\n🤖 *AI:* _{ai_comment}_\n"
 
     if url:
-        msg += f"\n🔗 [Смотреть лот на bid\\.cars]({url})"
+        source = car.get("source", "")
+        if "copart" in source.lower() or "copart" in url.lower():
+            link_text = "Смотреть лот на Copart"
+        else:
+            link_text = "Смотреть лот на bid\\.cars"
+        msg += f"\n🔗 [{link_text}]({url})"
 
     return msg
 
