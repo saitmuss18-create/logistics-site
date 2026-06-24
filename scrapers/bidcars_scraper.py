@@ -123,93 +123,78 @@ def _select_dropdown(driver, btn_selector: str, value: str) -> bool:
     return False
 
 
-def _set_year_input(driver, value: int) -> bool:
-    """Вводит год в поле-спиннер (С / До). Русский сайт использует input, не дропдаун."""
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
-    # Ищем поле "С" (year from) — первый числовой input в форме поиска
-    selectors = [
-        "input[placeholder='С']",
-        "input[name='year_from']",
-        "input[name='yearFrom']",
-        ".year-from input",
-        ".year_from input",
-        "form input[type='number']:first-of-type",
-    ]
-    for sel in selectors:
-        try:
-            inp = driver.find_element(By.CSS_SELECTOR, sel)
-            inp.click()
-            inp.clear()
-            inp.send_keys(str(value))
-            inp.send_keys(Keys.TAB)
-            time.sleep(0.5)
-            logger.info(f"bid.cars: год от {value} введён в поле ({sel})")
-            return True
-        except Exception:
-            continue
-    # Запасной вариант: ищем все числовые инпуты и берём первый
-    try:
-        inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='number'], input[type='text']")
-        for inp in inputs:
-            ph = (inp.get_attribute("placeholder") or "").strip()
-            nm = (inp.get_attribute("name") or "").lower()
-            if ph in ("С", "с", "From", "from") or "year" in nm or "год" in nm:
-                inp.click()
-                inp.clear()
-                inp.send_keys(str(value))
-                inp.send_keys(Keys.TAB)
-                time.sleep(0.5)
-                logger.info(f"bid.cars: год от {value} введён через перебор (placeholder={ph})")
-                return True
-    except Exception as e:
-        logger.warning(f"bid.cars: не удалось ввести год: {e}")
-    return False
-
-
 def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.keys import Keys
 
     driver.get("https://bid.cars/ru/search")
-    time.sleep(5)
+    time.sleep(6)
 
-    # Тип = Автомобиль (уже выбран по умолчанию, но проверяем)
+    # Ждём загрузки формы
     try:
-        WebDriverWait(driver, 8).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "input, select, .dropdown-toggle"))
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".dropdown-toggle"))
         )
-        # Пробуем дропдаун типа если есть
-        done = _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Автомобиль")
-        if not done:
-            _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Automobile")
-        time.sleep(1)
     except Exception:
         pass
 
-    # Год ОТ — сначала пробуем input (русский сайт), потом дропдаун (английский)
-    year_set = _set_year_input(driver, min_year)
-    if not year_set:
-        for sel in [".search_year_from .dropdown-toggle", "[class*='year_from'] .dropdown-toggle"]:
-            if _select_dropdown(driver, sel, str(min_year)):
-                year_set = True
+    # Год "С" — ищем поле и вводим через JS (надёжнее всего)
+    try:
+        # Пробуем найти все инпуты на странице и найти поле года
+        all_inputs = driver.find_elements(By.TAG_NAME, "input")
+        year_inp = None
+        for inp in all_inputs:
+            ph = (inp.get_attribute("placeholder") or "")
+            nm = (inp.get_attribute("name") or "").lower()
+            if ph.strip() in ("С", "с", "From") or "year_from" in nm or "yearfrom" in nm:
+                year_inp = inp
                 break
-    if not year_set:
-        logger.warning(f"bid.cars: год от {min_year} НЕ установлен")
+        # Если не нашли по placeholder — берём первый числовой input
+        if not year_inp:
+            for inp in all_inputs:
+                if inp.get_attribute("type") in ("number",):
+                    year_inp = inp
+                    break
 
-    # Марка
+        if year_inp:
+            driver.execute_script("arguments[0].value = arguments[1];", year_inp, str(min_year))
+            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", year_inp)
+            driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", year_inp)
+            time.sleep(0.5)
+            logger.info(f"bid.cars: год от {min_year} установлен через JS")
+        else:
+            logger.warning(f"bid.cars: поле года не найдено")
+    except Exception as e:
+        logger.warning(f"bid.cars: ошибка ввода года: {e}")
+
+    # Марка — через дропдаун
     ok = _select_dropdown(driver, ".search_make_filter .dropdown-toggle", brand)
     if not ok:
-        # Пробуем через select
+        # Пробуем найти любой дропдаун с маркой
         try:
-            from selenium.webdriver.support.ui import Select
-            sel_el = driver.find_element(By.CSS_SELECTOR, "select[name='make'], select[name='brand']")
-            Select(sel_el).select_by_visible_text(brand)
-            ok = True
-            time.sleep(1)
-        except Exception:
-            pass
+            toggles = driver.find_elements(By.CSS_SELECTOR, ".dropdown-toggle")
+            for toggle in toggles:
+                txt = toggle.text.strip().lower()
+                if "марк" in txt or "make" in txt or "все" in txt:
+                    _js_click(driver, toggle)
+                    time.sleep(1)
+                    items = driver.find_elements(By.CSS_SELECTOR, ".dropdown-menu.show .dropdown-item")
+                    for item in items:
+                        if item.text.strip() == brand:
+                            _js_click(driver, item)
+                            ok = True
+                            time.sleep(1.5)
+                            break
+                    if ok:
+                        break
+                    else:
+                        _js_click(driver, toggle)
+                        time.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"bid.cars: перебор марки: {e}")
+
     if not ok:
         logger.warning(f"bid.cars: не удалось выбрать марку {brand}")
         return []
