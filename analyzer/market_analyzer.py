@@ -11,15 +11,9 @@ async def analyze_cars(cars: list[dict]) -> list[dict]:
     # Считаем выгоду для каждой машины
     analyzed = []
     for car in cars:
-        car_with_profit = calculate_profit(car)
-        if car_with_profit["profit_usd"] > 1000:  # Минимальная прибыль $1000
-            analyzed.append(car_with_profit)
-    
-    # Сортируем по выгоде
-    analyzed.sort(key=lambda x: x["profit_usd"], reverse=True)
-    
-    # Берём топ-5
-    top_cars = analyzed[:5]
+        analyzed.append(calculate_profit(car))
+
+    top_cars = analyzed[:10]
     
     # AI анализ через Claude
     if ANTHROPIC_API_KEY and top_cars:

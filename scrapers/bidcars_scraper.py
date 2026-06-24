@@ -43,7 +43,7 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                     lot_urls = _get_lot_urls(driver, brand, model, min_year)
                     logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}")
                     cars = []
-                    for url in lot_urls[:5]:
+                    for url in lot_urls[:10]:
                         try:
                             car = _parse_lot_page(driver, url, brand, filters)
                             if car:
@@ -287,13 +287,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
 
 
 def _is_suitable(car: dict, filters: dict) -> bool:
-    y = datetime.now().year
-    min_year = y - filters.get("max_year_age", 10)
-    max_price = filters.get("max_price_usd", 20000)
-    if car["year"] < min_year:
-        return False
-    if car["price"] > 0 and car["price"] > max_price:
-        return False
     return True
 
 
