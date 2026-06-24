@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                     new_urls = [u for u in lot_urls if u not in seen]
                     logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}, новых: {len(new_urls)}")
                     cars = []
-                    for url in new_urls[:10]:
+                    for url in new_urls[:20]:
                         try:
                             car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
                             if car:
@@ -98,79 +98,109 @@ def _js_click(driver, el):
     driver.execute_script("arguments[0].click();", el)
 
 
+def _select_dropdown(driver, btn_selector: str, value: str) -> bool:
+    """Открывает дропдаун и выбирает значение. Возвращает True если успешно."""
+    from selenium.webdriver.common.by import By
+    try:
+        btn = driver.find_element(By.CSS_SELECTOR, btn_selector)
+        _js_click(driver, btn)
+        time.sleep(1)
+        # Ищем элемент с точным или частичным совпадением текста
+        items = driver.find_elements(By.CSS_SELECTOR, ".dropdown-menu.show .dropdown-item")
+        for item in items:
+            if item.text.strip() == value:
+                _js_click(driver, item)
+                time.sleep(1.5)
+                return True
+        # Частичное совпадение
+        for item in items:
+            if value in item.text:
+                _js_click(driver, item)
+                time.sleep(1.5)
+                return True
+    except Exception as e:
+        logger.debug(f"_select_dropdown {btn_selector}={value}: {e}")
+    return False
+
+
 def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    # Русская версия сайта
     driver.get("https://bid.cars/ru/search")
     time.sleep(5)
 
-    # Type = Automobile
+    # Тип = Автомобиль
     try:
-        type_btn = WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
         )
-        _js_click(driver, type_btn)
+        _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Automobile")
         time.sleep(1)
-        for item in driver.find_elements(By.CSS_SELECTOR, ".dropdown-item"):
-            if "automobile" in item.text.lower() or "автомобил" in item.text.lower():
-                _js_click(driver, item)
-                break
-        time.sleep(2)
     except Exception as e:
         logger.warning(f"bid.cars тип: {e}")
 
-    # Make
-    try:
-        make_btn = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle"))
-        )
-        _js_click(driver, make_btn)
-        time.sleep(1)
-        make_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and text()='{brand}']")
-        _js_click(driver, make_el)
-        time.sleep(2)
-    except Exception as e:
-        logger.warning(f"bid.cars марка {brand}: {e}")
+    # Марка
+    ok = _select_dropdown(driver, ".search_make_filter .dropdown-toggle", brand)
+    if not ok:
+        logger.warning(f"bid.cars: не удалось выбрать марку {brand}")
         return []
+    time.sleep(1)
 
-    # Model
+    # Модель
     if model:
-        try:
-            model_btn = driver.find_element(By.CSS_SELECTOR, ".search_model_filter .dropdown-toggle")
-            _js_click(driver, model_btn)
-            time.sleep(1)
-            model_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and contains(text(),'{model}')]")
-            _js_click(driver, model_el)
-            time.sleep(2)
-        except Exception:
-            pass
+        _select_dropdown(driver, ".search_model_filter .dropdown-toggle", model)
+        time.sleep(1)
 
-    # Year From — перебираем все варианты селекторов
+    # Год ОТ — пробуем все возможные селекторы
     year_set = False
-    for selector in [
+    year_selectors = [
         ".search_year_from .dropdown-toggle",
+        ".year_from .dropdown-toggle",
         "[class*='year_from'] .dropdown-toggle",
         "[class*='year-from'] .dropdown-toggle",
-    ]:
-        try:
-            btn = driver.find_element(By.CSS_SELECTOR, selector)
-            _js_click(driver, btn)
-            time.sleep(1)
-            year_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and normalize-space(text())='{min_year}']")
-            _js_click(driver, year_el)
-            time.sleep(1)
-            logger.info(f"bid.cars: год от {min_year} установлен")
+        "[class*='YearFrom'] .dropdown-toggle",
+    ]
+    for sel in year_selectors:
+        if _select_dropdown(driver, sel, str(min_year)):
+            logger.info(f"bid.cars: год от {min_year} установлен (селектор: {sel})")
             year_set = True
             break
-        except Exception:
-            continue
-    if not year_set:
-        logger.warning(f"bid.cars: не удалось установить год от {min_year}")
 
-    # Search
+    if not year_set:
+        # Последняя попытка — ищем все дропдауны и пробуем каждый
+        try:
+            toggles = driver.find_elements(By.CSS_SELECTOR, ".dropdown-toggle")
+            for toggle in toggles:
+                label = toggle.text.strip()
+                if "год" in label.lower() or "year" in label.lower() or label == "" or label == "Все":
+                    _js_click(driver, toggle)
+                    time.sleep(1)
+                    items = driver.find_elements(By.CSS_SELECTOR, ".dropdown-menu.show .dropdown-item")
+                    for item in items:
+                        if item.text.strip() == str(min_year):
+                            _js_click(driver, item)
+                            time.sleep(1)
+                            logger.info(f"bid.cars: год от {min_year} установлен через перебор")
+                            year_set = True
+                            break
+                    if year_set:
+                        break
+                    else:
+                        # Закрываем дропдаун нажав ещё раз
+                        try:
+                            _js_click(driver, toggle)
+                            time.sleep(0.5)
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning(f"bid.cars: перебор дропдаунов года: {e}")
+
+    if not year_set:
+        logger.warning(f"bid.cars: год от {min_year} НЕ установлен")
+
+    # Кнопка поиска
     try:
         search_btn = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
@@ -181,24 +211,61 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         logger.warning(f"bid.cars поиск: {e}")
         return []
 
-    for pos in range(0, 4000, 600):
-        driver.execute_script(f"window.scrollTo(0, {pos});")
-        time.sleep(0.2)
-    time.sleep(1)
+    # Собираем URL со ВСЕХ страниц
+    all_urls = []
+    page = 1
+    while True:
+        logger.info(f"bid.cars: страница {page}")
+        for pos in range(0, 5000, 600):
+            driver.execute_script(f"window.scrollTo(0, {pos});")
+            time.sleep(0.15)
+        time.sleep(1)
 
-    anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
-    seen = set()
-    urls = []
-    for a in anchors:
-        href = a.get_attribute("href") or ""
-        if href and href not in seen and "#" not in href and "page=" not in href:
-            seen.add(href)
-            urls.append(href)
-    return urls
+        anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
+        seen_on_page = set()
+        page_urls = []
+        for a in anchors:
+            href = a.get_attribute("href") or ""
+            if href and href not in seen_on_page and "#" not in href and "page=" not in href:
+                seen_on_page.add(href)
+                page_urls.append(href)
+
+        new_on_page = [u for u in page_urls if u not in all_urls]
+        all_urls.extend(new_on_page)
+        logger.info(f"bid.cars: на странице {page} найдено {len(page_urls)} лотов")
+
+        if not new_on_page:
+            break
+
+        # Ищем кнопку следующей страницы
+        next_found = False
+        try:
+            next_btns = driver.find_elements(By.CSS_SELECTOR, "a.page-link, a[aria-label='Next'], .pagination .next a")
+            for btn in next_btns:
+                label = (btn.text or btn.get_attribute("aria-label") or "").strip().lower()
+                if label in ("next", "следующая", "»", ">") or btn.get_attribute("rel") == "next":
+                    href = btn.get_attribute("href") or ""
+                    if href and href != driver.current_url:
+                        driver.get(href)
+                        time.sleep(6)
+                        next_found = True
+                        page += 1
+                        break
+        except Exception:
+            pass
+
+        if not next_found:
+            break
+
+        if page > 10:
+            logger.info("bid.cars: достигнут лимит 10 страниц")
+            break
+
+    logger.info(f"bid.cars: итого собрано {len(all_urls)} URL")
+    return all_urls
 
 
 def _parse_auction_date(driver) -> datetime | None:
-    """Парсит дату аукциона с лота."""
     from selenium.webdriver.common.by import By
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
@@ -206,7 +273,8 @@ def _parse_auction_date(driver) -> datetime | None:
             if "sale date" in t or "auction date" in t or "дата" in t or "продажа" in t:
                 try:
                     date_str = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
-                    for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d.%m.%Y %H:%M", "%d.%m.%Y", "%b %d, %Y"):
+                    for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y", "%Y-%m-%d %H:%M",
+                                "%Y-%m-%d", "%d.%m.%Y %H:%M", "%d.%m.%Y", "%b %d, %Y"):
                         try:
                             return datetime.strptime(date_str, fmt)
                         except ValueError:
@@ -219,7 +287,6 @@ def _parse_auction_date(driver) -> datetime | None:
 
 
 def _format_timer(sale_dt: datetime) -> str:
-    """Форматирует таймер обратного отсчёта."""
     now = datetime.now()
     delta = sale_dt - now
     if delta.total_seconds() <= 0:
@@ -241,8 +308,7 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    # Открываем русскую версию лота
-    ru_url = url.replace("/en/", "/ru/").replace("bid.cars/lot/", "bid.cars/ru/lot/")
+    ru_url = url.replace("/en/", "/ru/")
     if "/ru/" not in ru_url:
         ru_url = url
     driver.get(ru_url)
@@ -281,7 +347,7 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         except Exception:
             pass
 
-    # Год из опций
+    # Год
     year = datetime.now().year
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
@@ -307,7 +373,7 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         logger.debug(f"Пропускаем {title}: год {year} < {min_year}")
         return None
 
-    # Дата аукциона
+    # Дата аукциона — пропускаем прошедшие
     sale_dt = _parse_auction_date(driver)
     if sale_dt and sale_dt.date() < datetime.now().date():
         logger.debug(f"Пропускаем {title}: аукцион {sale_dt.date()} уже прошёл")
