@@ -14,8 +14,7 @@ def get_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
-    driver = uc.Chrome(options=options, version_main=149, headless=True)
+    driver = uc.Chrome(options=options, version_main=149)
     return driver
 
 
@@ -24,7 +23,6 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
     brands = (settings or {}).get("brands", POPULAR_BRANDS[:5])
     models_filter = (settings or {}).get("models", [])
     filters = settings or {}
-
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _scrape_sync, brands[:3], models_filter, filters)
 
@@ -37,15 +35,11 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]
         for brand in brands:
             brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
             search_list = brand_models[:2] if brand_models else [None]
-
             for model in search_list:
                 try:
                     label = f"{brand} {model}" if model else brand
-                    # Шаг 1: получаем список ссылок на лоты
                     lot_urls = _get_lot_urls(driver, brand, model)
                     logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}")
-
-                    # Шаг 2: заходим в каждый лот и читаем данные
                     cars = []
                     for url in lot_urls[:5]:
                         try:
@@ -55,7 +49,6 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]
                             time.sleep(1.5)
                         except Exception as e:
                             logger.debug(f"bid.cars лот {url}: {e}")
-
                     logger.info(f"bid.cars: подходящих {len(cars)} для {label}")
                     results.extend(cars if cars else _get_mock(brand))
                     time.sleep(2)
@@ -75,14 +68,14 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]
     return results
 
 
+def _js_click(driver, el):
+    driver.execute_script("arguments[0].click();", el)
+
+
 def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
-    """Открывает поиск, выбирает марку/модель, возвращает список URL лотов."""
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-
-    def js_click(el):
-        driver.execute_script("arguments[0].click();", el)
 
     driver.get("https://bid.cars/en/search")
     time.sleep(5)
@@ -92,10 +85,10 @@ def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
         type_btn = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
         )
-        js_click(type_btn)
+        _js_click(driver, type_btn)
         time.sleep(1)
         automobile = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]")
-        js_click(automobile)
+        _js_click(driver, automobile)
         time.sleep(2)
     except Exception as e:
         logger.warning(f"bid.cars тип: {e}")
@@ -105,23 +98,23 @@ def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
         make_btn = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle"))
         )
-        js_click(make_btn)
+        _js_click(driver, make_btn)
         time.sleep(1)
         make_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and text()='{brand}']")
-        js_click(make_el)
+        _js_click(driver, make_el)
         time.sleep(2)
     except Exception as e:
         logger.warning(f"bid.cars марка {brand}: {e}")
         return []
 
-    # Model (если задана)
+    # Model
     if model:
         try:
             model_btn = driver.find_element(By.CSS_SELECTOR, ".search_model_filter .dropdown-toggle")
-            js_click(model_btn)
+            _js_click(driver, model_btn)
             time.sleep(1)
             model_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and contains(text(),'{model}')]")
-            js_click(model_el)
+            _js_click(driver, model_el)
             time.sleep(2)
         except Exception:
             pass
@@ -131,19 +124,18 @@ def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
         search_btn = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
         )
-        js_click(search_btn)
+        _js_click(driver, search_btn)
         time.sleep(8)
     except Exception as e:
         logger.warning(f"bid.cars поиск: {e}")
         return []
 
-    # Скроллим чтобы подгрузить все карточки
+    # Скроллим для загрузки карточек
     for pos in range(0, 4000, 600):
         driver.execute_script(f"window.scrollTo(0, {pos});")
         time.sleep(0.2)
     time.sleep(1)
 
-    # Собираем уникальные ссылки на лоты
     anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
     seen = set()
     urls = []
@@ -156,7 +148,6 @@ def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
 
 
 def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
-    """Заходит на страницу лота и извлекает все данные + фото."""
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
@@ -164,17 +155,23 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     driver.get(url)
     time.sleep(4)
 
-    # Ждём загрузки заголовка лота
     try:
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "h1, .lot-title, [class*='title']"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "h1"))
         )
     except Exception:
         pass
 
+    # Скроллим для загрузки всех фото
+    for pos in range(0, 2000, 400):
+        driver.execute_script(f"window.scrollTo(0, {pos});")
+        time.sleep(0.15)
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(1)
+
     # Заголовок
     title = brand
-    for sel in ["h1", ".lot-title", "[class*='vehicle-title']", "[class*='lot-title']"]:
+    for sel in ["h1", ".lot-title", "[class*='vehicle-title']"]:
         try:
             el = driver.find_element(By.CSS_SELECTOR, sel)
             if el.text.strip():
@@ -183,49 +180,38 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         except Exception:
             pass
 
-    # Год из заголовка или страницы
+    body_text = driver.find_element(By.TAG_NAME, "body").text
+
+    # Год
     year = datetime.now().year
-    page_text = driver.find_element(By.TAG_NAME, "body").text
-    for word in page_text.split():
+    for word in title.split() + body_text.split():
         if word.isdigit() and 2000 <= int(word) <= datetime.now().year:
             year = int(word)
             break
 
-    # Цена (Current Bid)
+    # Цена
     price = 0.0
-    for pattern in ["current bid", "current price", "текущая ставка"]:
-        lines = [l.strip() for l in page_text.lower().split("\n") if pattern in l.lower()]
-        for l in lines:
-            nums = "".join(c for c in l if c.isdigit() or c == ".")
+    for line in body_text.split("\n"):
+        if "$" in line and any(c.isdigit() for c in line):
+            nums = "".join(c for c in line if c.isdigit() or c == ".")
             if nums:
                 try:
-                    price = float(nums)
-                    break
+                    v = float(nums)
+                    if 100 <= v <= 200000:
+                        price = v
+                        break
                 except Exception:
                     pass
-        if price:
-            break
-    # Ищем $ в тексте если не нашли
-    if not price:
-        for l in page_text.split("\n"):
-            if "$" in l and any(c.isdigit() for c in l):
-                nums = "".join(c for c in l if c.isdigit() or c == ".")
-                if nums:
-                    try:
-                        price = float(nums)
-                        break
-                    except Exception:
-                        pass
 
     # Повреждения
     damage = "Unknown"
-    damage_keys = ["damage", "повреждения", "hail", "flood", "burn", "rear end", "front end", "normal wear", "minor"]
-    for l in page_text.split("\n"):
-        if any(k in l.lower() for k in damage_keys) and len(l.strip()) < 80:
-            damage = l.strip()
+    damage_keys = ["damage", "hail", "flood", "burn", "rear", "front", "normal wear", "minor"]
+    for line in body_text.split("\n"):
+        if any(k in line.lower() for k in damage_keys) and 3 < len(line.strip()) < 80:
+            damage = line.strip()
             break
 
-    # Фото — только реальные фото авто с images.bid.cars
+    # Фото — только images.bid.cars
     images = []
     for img in driver.find_elements(By.TAG_NAME, "img"):
         for attr in ["src", "data-src", "data-lazy", "data-original"]:
@@ -273,6 +259,6 @@ def _get_mock(brand: str) -> list[dict]:
         "source": "bid.cars", "brand": brand,
         "title": f"{year} {brand} {model}",
         "price": random.randint(3500, 16000), "bids": 5,
-        "damage": "Hail", "year": year, "image": "",
+        "damage": "Hail", "year": year, "image": "", "images": [],
         "url": f"https://bid.cars/en/search?make={brand.lower()}",
     }]
