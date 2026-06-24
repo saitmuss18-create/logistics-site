@@ -12,7 +12,7 @@ SETTINGS_FILE = Path("settings.json")
 
 ALL_VEHICLE_TYPES = ["Автомобиль", "Мотоцикл", "ATV", "Гидроцикл", "Снегоход", "Лодка"]
 
-ALL_SOURCES = ["bid.cars", "Copart"]
+ALL_SOURCES = ["bid.cars", "Copart", "IAAI"]
 
 ALL_CONDITIONS = [
     "✅ На ходу",
@@ -65,7 +65,7 @@ def load_settings() -> dict:
         "brands": ALL_BRANDS[:5], "models": [], "check_interval_hours": 6,
         "vehicle_types": ["Автомобиль"],
         "conditions": [],
-        "sources": ["bid.cars", "Copart"],
+        "sources": ["bid.cars", "Copart", "IAAI"],
     }
 
 

@@ -232,9 +232,11 @@ def format_car_message(car: dict, num: int, for_admin: bool = False) -> str:
         msg += f"\n🤖 *AI:* _{ai_comment}_\n"
 
     if url:
-        source = car.get("source", "")
-        if "copart" in source.lower() or "copart" in url.lower():
+        source = car.get("source", "").lower()
+        if "copart" in source:
             link_text = "Смотреть лот на Copart"
+        elif "iaai" in source:
+            link_text = "Смотреть лот на IAAI"
         else:
             link_text = "Смотреть лот на bid\\.cars"
         msg += f"\n🔗 [{link_text}]({url})"

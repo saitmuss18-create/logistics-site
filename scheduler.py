@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from scrapers.bidcars_scraper import scrape_bidcars
 from scrapers.copart_scraper import scrape_copart
+from scrapers.iaai_scraper import scrape_iaai
 from analyzer.market_analyzer import analyze_cars
 from publisher.telegram_publisher import publish_to_telegram
 from admin_bot import run_admin_bot, load_settings
@@ -65,6 +66,20 @@ async def run_once_with_feedback(session=None, chat_id: int = None):
         except Exception as e:
             logger.error(f"Copart: {e}")
             await _notify(session, chat_id, f"❌ *Copart* ошибка: {e}")
+
+    if "IAAI" in sources:
+        await _notify(session, chat_id, "🔍 Ищу на *IAAI*...")
+        try:
+            cars = await scrape_iaai(s)
+            count = len(cars)
+            if count:
+                await _notify(session, chat_id, f"✅ *IAAI:* найдено *{count}* новых лотов")
+            else:
+                await _notify(session, chat_id, "ℹ️ *IAAI:* новых лотов не найдено")
+            all_cars.extend(cars)
+        except Exception as e:
+            logger.error(f"IAAI: {e}")
+            await _notify(session, chat_id, f"❌ *IAAI* ошибка: {e}")
 
     total = len(all_cars)
     logger.info(f"📋 Всего найдено лотов: {total}")
