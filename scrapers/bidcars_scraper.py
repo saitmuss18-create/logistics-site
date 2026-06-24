@@ -50,7 +50,7 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
     conditions_filter = s.get("conditions", [])
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
-        None, _scrape_sync, brands[:3], models_filter, s, min_year, vehicle_types, conditions_filter
+        None, _scrape_sync, brands, models_filter, s, min_year, vehicle_types, conditions_filter
     )
 
 
@@ -70,7 +70,7 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict,
         for vtype in vehicle_types:
             for brand in brands:
                 brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
-                search_list = brand_models[:2] if brand_models else [None]
+                search_list = brand_models if brand_models else [None]
                 for model in search_list:
                     try:
                         label = f"{vtype} / {brand} {model}" if model else f"{vtype} / {brand}"
