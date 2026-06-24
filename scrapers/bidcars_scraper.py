@@ -136,7 +136,10 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
         )
-        _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Automobile")
+        # На русском сайте значение может быть "Автомобиль" или "Automobile"
+        done = _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Автомобиль")
+        if not done:
+            _select_dropdown(driver, ".search_make_transport .dropdown-toggle", "Automobile")
         time.sleep(1)
     except Exception as e:
         logger.warning(f"bid.cars тип: {e}")
@@ -410,7 +413,7 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     damage = "Нет данных"
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
-            if "primary damage" in opt.text.lower() or "основное повреждение" in opt.text.lower():
+            if "primary damage" in opt.text.lower() or "основное повреждение" in opt.text.lower() or "повреждение" in opt.text.lower():
                 try:
                     damage = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
                 except Exception:
@@ -423,7 +426,7 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     odometer = ""
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
-            if "odometer" in opt.text.lower() or "пробег" in opt.text.lower():
+            if "odometer" in opt.text.lower() or "пробег" in opt.text.lower() or "одометр" in opt.text.lower():
                 try:
                     odometer = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
                 except Exception:
