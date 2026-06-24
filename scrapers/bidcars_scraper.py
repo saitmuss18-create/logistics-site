@@ -224,21 +224,16 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
             damage = l.strip()
             break
 
-    # Фото — ищем все большие фото лота
+    # Фото — только реальные фото авто с images.bid.cars
     images = []
     for img in driver.find_elements(By.TAG_NAME, "img"):
         for attr in ["src", "data-src", "data-lazy", "data-original"]:
             src = img.get_attribute(attr) or ""
-            if (src and src.startswith("http")
-                    and not src.endswith(".svg")
-                    and "logo" not in src and "icon" not in src
-                    and "flag" not in src and "placeholder" not in src
-                    and "facebook" not in src and "instagram" not in src):
+            if src and "images.bid.cars" in src and src.endswith(".jpg"):
                 if src not in images:
                     images.append(src)
                 break
 
-    # Берём первое фото
     main_image = images[0] if images else ""
 
     car = {
@@ -250,6 +245,7 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         "damage": damage,
         "year": year,
         "image": main_image,
+        "images": images[:10],
         "url": url,
     }
 
