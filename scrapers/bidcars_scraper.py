@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 def get_driver():
     import undetected_chromedriver as uc
     options = uc.ChromeOptions()
-    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    driver = uc.Chrome(options=options, version_main=149)
+    options.add_argument("--disable-gpu")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+    driver = uc.Chrome(options=options, version_main=149, headless=True)
     return driver
 
 

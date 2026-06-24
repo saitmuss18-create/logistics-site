@@ -16,12 +16,10 @@ async def run_once():
     logger.info(f"⏰ Запуск цикла: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     logger.info("📡 Парсим аукционы...")
 
-    iaai_cars, copart_cars, bidcars_cars = await asyncio.gather(
-        scrape_iaai(s), scrape_copart(s), scrape_bidcars(s), return_exceptions=True
-    )
+    bidcars_cars = await scrape_bidcars(s)
 
     all_cars = []
-    for result in [iaai_cars, copart_cars, bidcars_cars]:
+    for result in [bidcars_cars]:
         if isinstance(result, list):
             all_cars.extend(result)
         else:
