@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from dotenv import load_dotenv
+load_dotenv()
 from scheduler import run_all
 
 logging.basicConfig(
