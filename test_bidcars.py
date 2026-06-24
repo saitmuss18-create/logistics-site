@@ -1,6 +1,6 @@
 """
+Тест: заходим в 1 лот Toyota и собираем ВСЕ фото
 Запусти: python test_bidcars.py
-Бот заходит в каждый лот, читает фото и данные, потом следующий.
 """
 import time
 import undetected_chromedriver as uc
@@ -16,19 +16,17 @@ driver = uc.Chrome(options=options, version_main=149)
 def js_click(el):
     driver.execute_script("arguments[0].click();", el)
 
-# === ШАГ 1: Поиск Toyota ===
+# Поиск Toyota
 driver.get("https://bid.cars/en/search")
 time.sleep(5)
 
-# Type
-type_btn = WebDriverWait(driver, 10).until(
+js_click(WebDriverWait(driver, 10).until(
     EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
-)
-js_click(type_btn); time.sleep(1)
+))
+time.sleep(1)
 js_click(driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]"))
 time.sleep(2)
 
-# Make
 js_click(WebDriverWait(driver, 10).until(
     EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle"))
 ))
@@ -36,20 +34,12 @@ time.sleep(1)
 js_click(driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and text()='Toyota']"))
 time.sleep(2)
 
-# Search
 js_click(WebDriverWait(driver, 10).until(
     EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
 ))
 time.sleep(8)
-print(f"URL результатов: {driver.current_url}")
 
-# Скроллим для загрузки карточек
-for pos in range(0, 4000, 600):
-    driver.execute_script(f"window.scrollTo(0, {pos});")
-    time.sleep(0.2)
-time.sleep(1)
-
-# Собираем ссылки на лоты
+# Берём первую ссылку на лот
 anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
 seen = set()
 lot_urls = []
@@ -59,62 +49,85 @@ for a in anchors:
         seen.add(href)
         lot_urls.append(href)
 
-print(f"\nНайдено лотов: {len(lot_urls)}")
-print("Захожу в каждый лот...\n")
+print(f"Найдено лотов: {len(lot_urls)}")
 
-# === ШАГ 2: Заходим в каждый лот ===
-results = []
-for i, url in enumerate(lot_urls[:5], 1):
-    print(f"[{i}/5] {url}")
-    driver.get(url)
-    time.sleep(4)
+# Заходим в первый лот
+lot_url = lot_urls[0]
+print(f"\nЗахожу в лот: {lot_url}")
+driver.get(lot_url)
+time.sleep(5)
 
-    # Скроллим для загрузки фото
-    for pos in range(0, 2000, 400):
-        driver.execute_script(f"window.scrollTo(0, {pos});")
-        time.sleep(0.2)
-    driver.execute_script("window.scrollTo(0, 0);")
-    time.sleep(1)
+# Скроллим чтобы всё загрузилось
+for pos in range(0, 3000, 300):
+    driver.execute_script(f"window.scrollTo(0, {pos});")
+    time.sleep(0.15)
+driver.execute_script("window.scrollTo(0, 0);")
+time.sleep(2)
 
-    # Заголовок
-    title = ""
-    for sel in ["h1", ".lot-title", "[class*='vehicle-title']"]:
-        try:
-            el = driver.find_element(By.CSS_SELECTOR, sel)
-            if el.text.strip():
-                title = el.text.strip()
-                break
-        except Exception:
-            pass
+driver.save_screenshot("lot_page.png")
+print("Скриншот lot_page.png")
 
-    # Все фото на странице лота
-    images = []
-    for img in driver.find_elements(By.TAG_NAME, "img"):
-        for attr in ["src", "data-src", "data-lazy", "data-original"]:
-            src = img.get_attribute(attr) or ""
-            if (src and src.startswith("http") and ".svg" not in src
-                    and "logo" not in src and "icon" not in src
-                    and "placeholder" not in src and "flag" not in src):
-                if src not in images:
-                    images.append(src)
-                break
+# Заголовок
+title = ""
+for sel in ["h1", ".lot-title", "[class*='title']"]:
+    try:
+        el = driver.find_element(By.CSS_SELECTOR, sel)
+        if el.text.strip():
+            title = el.text.strip()
+            break
+    except Exception:
+        pass
+print(f"Заголовок: {title}")
 
-    # Текст страницы (цена, год, повреждения)
-    body_text = driver.find_element(By.TAG_NAME, "body").text
-    price_line = next((l for l in body_text.split("\n") if "$" in l and any(c.isdigit() for c in l)), "")
+# Выводим HTML всех img для анализа
+print("\n--- ВСЕ img на странице лота ---")
+all_imgs = driver.find_elements(By.TAG_NAME, "img")
+print(f"Всего img: {len(all_imgs)}")
+for i, img in enumerate(all_imgs):
+    src = img.get_attribute("src") or ""
+    dsrc = img.get_attribute("data-src") or ""
+    cls = img.get_attribute("class") or ""
+    alt = img.get_attribute("alt") or ""
+    if src or dsrc:
+        print(f"  [{i}] src={src[:90]}")
+        if dsrc:
+            print(f"       data-src={dsrc[:90]}")
+        print(f"       class={cls[:50]} alt={alt[:30]}")
 
-    print(f"  Заголовок: {title}")
-    print(f"  Цена: {price_line.strip()[:60]}")
-    print(f"  Фото ({len(images)}): {images[0][:100] if images else '❌ нет'}")
-    if len(images) > 1:
-        print(f"            {images[1][:100]}")
+# Ищем фото галереи
+print("\n--- Фото авто (фильтрованные) ---")
+car_photos = []
+skip_words = ["logo", "icon", "flag", "placeholder", "facebook", "instagram", "twitter", "avatar", "user", "banner"]
+for img in all_imgs:
+    for attr in ["src", "data-src", "data-lazy", "data-original"]:
+        src = img.get_attribute(attr) or ""
+        if src and src.startswith("http") and ".svg" not in src:
+            if not any(w in src.lower() for w in skip_words):
+                if src not in car_photos:
+                    car_photos.append(src)
+        if src:
+            break
 
-    driver.save_screenshot(f"lot_{i}.png")
-    results.append({"url": url, "title": title, "images": images[:3]})
-    print()
+print(f"Фото авто: {len(car_photos)}")
+for p in car_photos:
+    print(f"  {p}")
 
-print(f"\n✅ Готово! Обработано {len(results)} лотов")
-print("Скриншоты: lot_1.png ... lot_5.png")
+# Также проверяем через JS — вдруг фото в JS-переменных
+print("\n--- Ищем фото через JS (window.__photos__ или похожее) ---")
+try:
+    js_result = driver.execute_script("""
+        var imgs = [];
+        document.querySelectorAll('img').forEach(function(img) {
+            var s = img.src || img.dataset.src || img.dataset.lazy || '';
+            if (s && s.startsWith('http') && !s.includes('.svg')) imgs.push(s);
+        });
+        return imgs;
+    """)
+    print(f"JS img: {len(js_result)}")
+    for p in js_result[:20]:
+        print(f"  {p}")
+except Exception as e:
+    print(f"JS ошибка: {e}")
 
 input("\nНажми Enter чтобы закрыть...")
 driver.quit()
