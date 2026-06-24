@@ -11,15 +11,14 @@ logger = logging.getLogger(__name__)
 
 SEEN_FILE = Path("seen_copart.json")
 
-HEADERS = {
+BASE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
     "Origin": "https://www.copart.com",
     "Referer": "https://www.copart.com/",
 }
 
-# Тип ТС → код Copart
 VEHTYPE_MAP = {
     "Автомобиль": "VEHTYPE_V",
     "Мотоцикл":   "VEHTYPE_B",
@@ -46,6 +45,24 @@ def _save_seen(seen: set):
         pass
 
 
+def _get_copart_cookies() -> dict:
+    """Открывает Copart через Selenium, получает куки для API запросов."""
+    try:
+        from scrapers.bidcars_scraper import get_driver
+        driver = get_driver()
+        try:
+            driver.get("https://www.copart.com/")
+            time.sleep(6)
+            cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
+            logger.info(f"Copart: получено {len(cookies)} куки")
+            return cookies
+        finally:
+            driver.quit()
+    except Exception as e:
+        logger.error(f"Copart: не удалось получить куки: {e}")
+        return {}
+
+
 async def scrape_copart(settings: dict = None) -> list[dict]:
     s = settings or {}
     from config import POPULAR_BRANDS
@@ -56,11 +73,18 @@ async def scrape_copart(settings: dict = None) -> list[dict]:
     vehicle_types = s.get("vehicle_types", ["Автомобиль"])
     conditions_filter = s.get("conditions", [])
 
+    # Получаем куки через браузер
+    loop = asyncio.get_event_loop()
+    cookies = await loop.run_in_executor(None, _get_copart_cookies)
+    if not cookies:
+        logger.warning("Copart: нет куки, пропускаем")
+        return []
+
     seen = _load_seen()
     new_seen = set()
     all_cars = []
 
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+    async with aiohttp.ClientSession(headers=BASE_HEADERS, cookies=cookies) as session:
         for brand in brands:
             brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
             search_list = brand_models if brand_models else [None]
