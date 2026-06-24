@@ -169,74 +169,91 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     driver.execute_script("window.scrollTo(0, 0);")
     time.sleep(1)
 
-    # Заголовок — берём из URL (там есть год-марка-модель)
-    # URL вида: /en/lot/0-45399688/2010-Toyota-Prius-JTDKN3DU8A1213119
+    # Заголовок — h2.title_lot (h1 содержит VIN!)
     title = brand
     try:
-        url_parts = url.rstrip("/").split("/")
-        slug = url_parts[-1]  # 2010-Toyota-Prius-JTDKN3DU8A1213119
-        # Убираем VIN (последний элемент после дефиса, 17 символов)
-        parts = slug.split("-")
-        # VIN обычно последний — 17 символов букв и цифр
-        if parts and len(parts[-1]) == 17 and parts[-1].isalnum():
-            parts = parts[:-1]
-        title = " ".join(parts)  # 2010 Toyota Prius
+        el = driver.find_element(By.CSS_SELECTOR, "h2.title_lot")
+        t = el.text.strip()
+        if t:
+            title = t
     except Exception:
         pass
 
-    # Если из URL не получилось — берём из h1
+    # Fallback: из URL slug
     if not title or title == brand:
-        for sel in ["h1", ".lot-title", "[class*='vehicle-title']"]:
-            try:
-                el = driver.find_element(By.CSS_SELECTOR, sel)
-                t = el.text.strip()
-                # Не берём если это VIN (17 символов без пробелов)
-                if t and not (len(t) == 17 and t.isalnum()):
-                    title = t
-                    break
-            except Exception:
-                pass
+        try:
+            slug = url.rstrip("/").split("/")[-1]
+            parts = slug.split("-")
+            if parts and len(parts[-1]) == 17 and parts[-1].isalnum():
+                parts = parts[:-1]
+            title = " ".join(parts)
+        except Exception:
+            pass
 
-    body_text = driver.find_element(By.TAG_NAME, "body").text
-
-    # Год
+    # Год из заголовка
     year = datetime.now().year
-    for word in title.split() + body_text.split():
+    for word in title.split():
         if word.isdigit() and 2000 <= int(word) <= datetime.now().year:
             year = int(word)
             break
 
-    # Цена
+    # Цена — span.price.current_bid
     price = 0.0
-    for line in body_text.split("\n"):
-        if "$" in line and any(c.isdigit() for c in line):
-            nums = "".join(c for c in line if c.isdigit() or c == ".")
-            if nums:
+    try:
+        el = driver.find_element(By.CSS_SELECTOR, ".price.current_bid")
+        nums = "".join(c for c in el.text if c.isdigit() or c == ".")
+        if nums:
+            price = float(nums)
+    except Exception:
+        pass
+
+    # Fallback цены из body
+    if price == 0:
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        for line in body_text.split("\n"):
+            if "$" in line and any(c.isdigit() for c in line):
+                nums = "".join(c for c in line if c.isdigit() or c == ".")
+                if nums:
+                    try:
+                        v = float(nums)
+                        if 100 <= v <= 200000:
+                            price = v
+                            break
+                    except Exception:
+                        pass
+
+    # Повреждения — из блока .options-list .option
+    damage = "Unknown"
+    try:
+        for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
+            if "Primary damage" in opt.text or "primary damage" in opt.text.lower():
                 try:
-                    v = float(nums)
-                    if 100 <= v <= 200000:
-                        price = v
-                        break
+                    damage = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
                 except Exception:
                     pass
-
-    # Повреждения
-    damage = "Unknown"
-    damage_keys = ["damage", "hail", "flood", "burn", "rear", "front", "normal wear", "minor"]
-    for line in body_text.split("\n"):
-        if any(k in line.lower() for k in damage_keys) and 3 < len(line.strip()) < 80:
-            damage = line.strip()
-            break
-
-    # Фото — только images.bid.cars
-    images = []
-    for img in driver.find_elements(By.TAG_NAME, "img"):
-        for attr in ["src", "data-src", "data-lazy", "data-original"]:
-            src = img.get_attribute(attr) or ""
-            if src and "images.bid.cars" in src and src.endswith(".jpg"):
-                if src not in images:
-                    images.append(src)
                 break
+    except Exception:
+        pass
+
+    # Фото из карусели #productCarousel
+    images = []
+    try:
+        for img in driver.find_elements(By.CSS_SELECTOR, "#productCarousel .f-carousel__slide img"):
+            src = img.get_attribute("src") or img.get_attribute("data-src") or ""
+            if src and "images.bid.cars" in src and src not in images:
+                images.append(src)
+    except Exception:
+        pass
+
+    # Fallback — все img с images.bid.cars
+    if not images:
+        for img in driver.find_elements(By.TAG_NAME, "img"):
+            for attr in ["src", "data-src", "data-lazy", "data-original"]:
+                src = img.get_attribute(attr) or ""
+                if src and "images.bid.cars" in src and src.endswith(".jpg"):
+                    if src not in images:
+                        images.append(src)
+                    break
 
     main_image = images[0] if images else ""
 
