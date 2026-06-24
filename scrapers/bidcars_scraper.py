@@ -45,7 +45,7 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                     cars = []
                     for url in lot_urls[:10]:
                         try:
-                            car = _parse_lot_page(driver, url, brand, filters)
+                            car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
                             if car:
                                 cars.append(car)
                             time.sleep(1.5)
@@ -201,12 +201,55 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         except Exception:
             pass
 
-    # Год из заголовка
+    # Год из блока опций (точнее чем из заголовка)
     year = datetime.now().year
-    for word in title.split():
-        if word.isdigit() and 2000 <= int(word) <= datetime.now().year:
-            year = int(word)
-            break
+    try:
+        for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
+            if "year" in opt.text.lower():
+                try:
+                    val = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
+                    if val.isdigit() and 2000 <= int(val) <= datetime.now().year:
+                        year = int(val)
+                        break
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    # Fallback: год из заголовка
+    if year == datetime.now().year:
+        for word in title.split():
+            if word.isdigit() and 2000 <= int(word) <= datetime.now().year:
+                year = int(word)
+                break
+
+    # Фильтр по году
+    min_year = filters.get("_min_year", 2015)
+    if year < min_year:
+        logger.debug(f"Пропускаем {title}: год {year} < {min_year}")
+        return None
+
+    # Дата аукциона — пропускаем уже прошедшие лоты
+    try:
+        for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
+            text_lower = opt.text.lower()
+            if "sale date" in text_lower or "auction date" in text_lower or "дата" in text_lower:
+                try:
+                    date_str = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
+                    from datetime import datetime as dt
+                    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%d.%m.%Y", "%b %d, %Y"):
+                        try:
+                            sale_date = dt.strptime(date_str, fmt)
+                            if sale_date.date() < dt.now().date():
+                                logger.debug(f"Пропускаем {title}: аукцион {date_str} уже прошёл")
+                                return None
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+                break
+    except Exception:
+        pass
 
     # Цена — span.price.current_bid
     price = 0.0
