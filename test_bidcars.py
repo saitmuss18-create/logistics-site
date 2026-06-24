@@ -21,94 +21,57 @@ service = Service(ChromeDriverManager().install())
 driver = webdriver.Chrome(service=service, options=options)
 driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
+def click(el):
+    driver.execute_script("arguments[0].click();", el)
+
 print("Открываю bid.cars...")
 driver.get("https://bid.cars/en/search")
-time.sleep(5)
+time.sleep(4)
 
-driver.save_screenshot("step1_loaded.png")
-print("Скриншот step1_loaded.png сохранён")
+# Шаг 1: Выбираем Type = Automobile
+print("Шаг 1: Выбираем тип Automobile...")
+type_btn = driver.find_element(By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle")
+click(type_btn)
+time.sleep(1)
+automobile = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]")
+click(automobile)
+time.sleep(2)
+print("  Тип выбран!")
+driver.save_screenshot("step1_type.png")
 
-# Ищем дропдаун марки
-print("\nИщем поле выбора марки...")
-try:
-    # Пробуем найти select или кнопку с "All makes"
-    make_selects = driver.find_elements(By.TAG_NAME, "select")
-    print(f"Найдено select элементов: {len(make_selects)}")
-    for i, sel in enumerate(make_selects):
-        print(f"  select[{i}]: id={sel.get_attribute('id')} name={sel.get_attribute('name')} — options: {len(sel.find_elements(By.TAG_NAME, 'option'))}")
+# Шаг 2: Выбираем марку Toyota
+print("Шаг 2: Выбираем марку Toyota...")
+make_btn = driver.find_element(By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle")
+click(make_btn)
+time.sleep(1)
+driver.save_screenshot("step2_makes_open.png")
+toyota = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and text()='Toyota']")
+click(toyota)
+time.sleep(2)
+print("  Марка выбрана!")
+driver.save_screenshot("step3_make_selected.png")
 
-    make_buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'All makes') or contains(text(), 'make')]")
-    print(f"Кнопок 'All makes': {len(make_buttons)}")
-    for b in make_buttons[:3]:
-        print(f"  tag={b.tag_name} text='{b.text[:40]}' class='{b.get_attribute('class')[:50]}'")
+# Шаг 3: Нажимаем Search
+print("Шаг 3: Нажимаем Search...")
+search_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-primary[type='submit']")
+click(search_btn)
+time.sleep(6)
+print(f"  URL: {driver.current_url}")
+driver.save_screenshot("step4_results.png")
+print("  Скриншот step4_results.png")
 
-except Exception as e:
-    print(f"Ошибка: {e}")
-
-# Пробуем кликнуть на "All makes"
-print("\nПробуем выбрать Toyota...")
-try:
-    # Вариант 1: через select
-    from selenium.webdriver.support.ui import Select
-    selects = driver.find_elements(By.TAG_NAME, "select")
-    for sel in selects:
-        opts = sel.find_elements(By.TAG_NAME, "option")
-        opt_texts = [o.text for o in opts]
-        if any("Toyota" in t for t in opt_texts):
-            print(f"Нашли select с Toyota! options: {opt_texts[:5]}")
-            Select(sel).select_by_visible_text("Toyota")
-            time.sleep(2)
-            break
-
-    # Вариант 2: кликнуть на текст All makes и выбрать
-    all_makes = driver.find_elements(By.XPATH, "//*[contains(@class,'make') or contains(@placeholder,'make') or contains(text(),'All makes')]")
-    for el in all_makes[:3]:
-        print(f"  Элемент: tag={el.tag_name} text='{el.text[:30]}' class='{el.get_attribute('class')[:50]}'")
-        try:
-            el.click()
-            time.sleep(2)
-            driver.save_screenshot("step2_clicked_make.png")
-            print("  Кликнули! Скриншот step2_clicked_make.png")
-
-            toyota_opt = driver.find_elements(By.XPATH, "//*[contains(text(),'Toyota')]")
-            print(f"  Опций Toyota: {len(toyota_opt)}")
-            if toyota_opt:
-                toyota_opt[0].click()
-                time.sleep(2)
-                print("  Выбрали Toyota!")
-            break
-        except:
-            pass
-
-except Exception as e:
-    print(f"Ошибка выбора: {e}")
-
-driver.save_screenshot("step3_after_make.png")
-print("\nСкриншот step3_after_make.png")
-
-# Нажать кнопку Search
-print("\nИщем кнопку Search...")
-try:
-    search_btns = driver.find_elements(By.XPATH, "//button[contains(text(),'Search') or contains(@class,'search')]")
-    print(f"Кнопок Search: {len(search_btns)}")
-    for btn in search_btns[:3]:
-        print(f"  '{btn.text}' class='{btn.get_attribute('class')[:40]}'")
-    if search_btns:
-        search_btns[0].click()
-        time.sleep(5)
-        print("Нажали Search!")
-        driver.save_screenshot("step4_results.png")
-        print("Скриншот step4_results.png")
-except Exception as e:
-    print(f"Ошибка поиска: {e}")
-
-print(f"\nURL после поиска: {driver.current_url}")
-
-# Ссылки на лоты
+# Ищем лоты
 lot_links = [a.get_attribute("href") for a in driver.find_elements(By.TAG_NAME, "a") if "/lot" in (a.get_attribute("href") or "")]
-print(f"Ссылок на лоты: {len(lot_links)}")
+print(f"\nНайдено ссылок на лоты: {len(lot_links)}")
 for l in lot_links[:5]:
     print(f"  {l}")
+
+# Ищем фото
+imgs = [i.get_attribute("src") or i.get_attribute("data-src") or "" for i in driver.find_elements(By.TAG_NAME, "img")]
+car_imgs = [s for s in imgs if s and "http" in s and not any(x in s for x in [".svg", "flag", "logo", "icon", "facebook", "instagram"])]
+print(f"\nФото авто: {len(car_imgs)}")
+for img in car_imgs[:5]:
+    print(f"  {img[:120]}")
 
 input("\nНажми Enter чтобы закрыть...")
 driver.quit()
