@@ -3,13 +3,14 @@ import asyncio
 import json
 import logging
 import os
-from config import TELEGRAM_CHANNEL, ADMIN_CHAT_ID
+from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, ADMIN_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
 
 def get_api():
-    return f"https://api.telegram.org/bot{os.getenv('TELEGRAM_TOKEN', '')}"
+    token = os.getenv('TELEGRAM_TOKEN') or TELEGRAM_TOKEN
+    return f"https://api.telegram.org/bot{token}"
 
 
 async def publish_to_telegram(cars: list[dict]):
