@@ -1,9 +1,8 @@
 import asyncio
 import json
 import logging
-import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -88,7 +87,6 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                 driver.quit()
             except Exception:
                 pass
-    # Сохраняем только новые просмотренные (не больше 5000 записей)
     seen.update(new_seen)
     if len(seen) > 5000:
         seen = set(list(seen)[-5000:])
@@ -105,7 +103,8 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    driver.get("https://bid.cars/en/search")
+    # Русская версия сайта
+    driver.get("https://bid.cars/ru/search")
     time.sleep(5)
 
     # Type = Automobile
@@ -115,8 +114,10 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         )
         _js_click(driver, type_btn)
         time.sleep(1)
-        automobile = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]")
-        _js_click(driver, automobile)
+        for item in driver.find_elements(By.CSS_SELECTOR, ".dropdown-item"):
+            if "automobile" in item.text.lower() or "автомобил" in item.text.lower():
+                _js_click(driver, item)
+                break
         time.sleep(2)
     except Exception as e:
         logger.warning(f"bid.cars тип: {e}")
@@ -147,17 +148,27 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         except Exception:
             pass
 
-    # Year From
-    try:
-        year_from_btn = driver.find_element(By.CSS_SELECTOR, ".search_year_from .dropdown-toggle")
-        _js_click(driver, year_from_btn)
-        time.sleep(1)
-        year_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and text()='{min_year}']")
-        _js_click(driver, year_el)
-        time.sleep(1)
-        logger.info(f"bid.cars: год от {min_year}")
-    except Exception as e:
-        logger.warning(f"bid.cars год от: {e}")
+    # Year From — перебираем все варианты селекторов
+    year_set = False
+    for selector in [
+        ".search_year_from .dropdown-toggle",
+        "[class*='year_from'] .dropdown-toggle",
+        "[class*='year-from'] .dropdown-toggle",
+    ]:
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, selector)
+            _js_click(driver, btn)
+            time.sleep(1)
+            year_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and normalize-space(text())='{min_year}']")
+            _js_click(driver, year_el)
+            time.sleep(1)
+            logger.info(f"bid.cars: год от {min_year} установлен")
+            year_set = True
+            break
+        except Exception:
+            continue
+    if not year_set:
+        logger.warning(f"bid.cars: не удалось установить год от {min_year}")
 
     # Search
     try:
@@ -170,7 +181,6 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         logger.warning(f"bid.cars поиск: {e}")
         return []
 
-    # Скроллим для загрузки карточек
     for pos in range(0, 4000, 600):
         driver.execute_script(f"window.scrollTo(0, {pos});")
         time.sleep(0.2)
@@ -187,12 +197,55 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
     return urls
 
 
+def _parse_auction_date(driver) -> datetime | None:
+    """Парсит дату аукциона с лота."""
+    from selenium.webdriver.common.by import By
+    try:
+        for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
+            t = opt.text.lower()
+            if "sale date" in t or "auction date" in t or "дата" in t or "продажа" in t:
+                try:
+                    date_str = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
+                    for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d.%m.%Y %H:%M", "%d.%m.%Y", "%b %d, %Y"):
+                        try:
+                            return datetime.strptime(date_str, fmt)
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
+
+def _format_timer(sale_dt: datetime) -> str:
+    """Форматирует таймер обратного отсчёта."""
+    now = datetime.now()
+    delta = sale_dt - now
+    if delta.total_seconds() <= 0:
+        return ""
+    days = delta.days
+    hours, rem = divmod(delta.seconds, 3600)
+    minutes = rem // 60
+    parts = []
+    if days > 0:
+        parts.append(f"{days} дн.")
+    if hours > 0:
+        parts.append(f"{hours} ч.")
+    parts.append(f"{minutes} мин.")
+    return "⏰ До аукциона: " + " ".join(parts)
+
+
 def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    driver.get(url)
+    # Открываем русскую версию лота
+    ru_url = url.replace("/en/", "/ru/").replace("bid.cars/lot/", "bid.cars/ru/lot/")
+    if "/ru/" not in ru_url:
+        ru_url = url
+    driver.get(ru_url)
     time.sleep(4)
 
     try:
@@ -202,14 +255,13 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Скроллим для загрузки всех фото
     for pos in range(0, 2000, 400):
         driver.execute_script(f"window.scrollTo(0, {pos});")
         time.sleep(0.15)
     driver.execute_script("window.scrollTo(0, 0);")
     time.sleep(1)
 
-    # Заголовок — h2.title_lot (h1 содержит VIN!)
+    # Заголовок
     title = brand
     try:
         el = driver.find_element(By.CSS_SELECTOR, "h2.title_lot")
@@ -219,7 +271,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Fallback: из URL slug
     if not title or title == brand:
         try:
             slug = url.rstrip("/").split("/")[-1]
@@ -230,11 +281,11 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         except Exception:
             pass
 
-    # Год из блока опций (точнее чем из заголовка)
+    # Год из опций
     year = datetime.now().year
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
-            if "year" in opt.text.lower():
+            if "year" in opt.text.lower() or "год" in opt.text.lower():
                 try:
                     val = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
                     if val.isdigit() and 2000 <= int(val) <= datetime.now().year:
@@ -244,7 +295,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
                     pass
     except Exception:
         pass
-    # Fallback: год из заголовка
     if year == datetime.now().year:
         for word in title.split():
             if word.isdigit() and 2000 <= int(word) <= datetime.now().year:
@@ -257,30 +307,16 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         logger.debug(f"Пропускаем {title}: год {year} < {min_year}")
         return None
 
-    # Дата аукциона — пропускаем уже прошедшие лоты
-    try:
-        for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
-            text_lower = opt.text.lower()
-            if "sale date" in text_lower or "auction date" in text_lower or "дата" in text_lower:
-                try:
-                    date_str = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
-                    from datetime import datetime as dt
-                    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%d.%m.%Y", "%b %d, %Y"):
-                        try:
-                            sale_date = dt.strptime(date_str, fmt)
-                            if sale_date.date() < dt.now().date():
-                                logger.debug(f"Пропускаем {title}: аукцион {date_str} уже прошёл")
-                                return None
-                            break
-                        except ValueError:
-                            continue
-                except Exception:
-                    pass
-                break
-    except Exception:
-        pass
+    # Дата аукциона
+    sale_dt = _parse_auction_date(driver)
+    if sale_dt and sale_dt.date() < datetime.now().date():
+        logger.debug(f"Пропускаем {title}: аукцион {sale_dt.date()} уже прошёл")
+        return None
 
-    # Цена — span.price.current_bid
+    timer_str = _format_timer(sale_dt) if sale_dt else ""
+    sale_date_str = sale_dt.strftime("%d.%m.%Y %H:%M") if sale_dt else ""
+
+    # Цена
     price = 0.0
     try:
         el = driver.find_element(By.CSS_SELECTOR, ".price.current_bid")
@@ -290,7 +326,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Fallback цены из body
     if price == 0:
         body_text = driver.find_element(By.TAG_NAME, "body").text
         for line in body_text.split("\n"):
@@ -305,11 +340,11 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
                     except Exception:
                         pass
 
-    # Повреждения — из блока .options-list .option
-    damage = "Unknown"
+    # Повреждения
+    damage = "Нет данных"
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
-            if "Primary damage" in opt.text or "primary damage" in opt.text.lower():
+            if "primary damage" in opt.text.lower() or "основное повреждение" in opt.text.lower():
                 try:
                     damage = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
                 except Exception:
@@ -318,7 +353,20 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Фото из карусели #productCarousel
+    # Пробег
+    odometer = ""
+    try:
+        for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
+            if "odometer" in opt.text.lower() or "пробег" in opt.text.lower():
+                try:
+                    odometer = opt.find_element(By.CSS_SELECTOR, ".right-info").text.strip()
+                except Exception:
+                    pass
+                break
+    except Exception:
+        pass
+
+    # Фото
     images = []
     try:
         for img in driver.find_elements(By.CSS_SELECTOR, "#productCarousel .f-carousel__slide img"):
@@ -328,7 +376,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Fallback — все img с images.bid.cars
     if not images:
         for img in driver.find_elements(By.TAG_NAME, "img"):
             for attr in ["src", "data-src", "data-lazy", "data-original"]:
@@ -338,42 +385,18 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
                         images.append(src)
                     break
 
-    main_image = images[0] if images else ""
-
-    car = {
+    return {
         "source": "bid.cars",
         "brand": brand,
         "title": title,
         "price": price,
         "bids": 1,
         "damage": damage,
+        "odometer": odometer,
         "year": year,
-        "image": main_image,
+        "sale_date": sale_date_str,
+        "timer": timer_str,
+        "image": images[0] if images else "",
         "images": images[:10],
-        "url": url,
+        "url": ru_url,
     }
-
-    if not _is_suitable(car, filters):
-        return None
-    return car
-
-
-def _is_suitable(car: dict, filters: dict) -> bool:
-    return True
-
-
-def _get_mock(brand: str) -> list[dict]:
-    year = datetime.now().year - random.randint(1, 5)
-    models = {
-        "Toyota": ["Camry", "RAV4", "Venza"], "Lexus": ["RX 350", "NX 300"],
-        "BMW": ["X5", "5 Series"], "Mercedes": ["E-Class", "GLC 300"],
-        "Hyundai": ["Palisade", "Tucson"], "default": ["Sedan"]
-    }
-    model = random.choice(models.get(brand, models["default"]))
-    return [{
-        "source": "bid.cars", "brand": brand,
-        "title": f"{year} {brand} {model}",
-        "price": random.randint(3500, 16000), "bids": 5,
-        "damage": "Hail", "year": year, "image": "", "images": [],
-        "url": f"https://bid.cars/en/search?make={brand.lower()}",
-    }]

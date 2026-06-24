@@ -147,31 +147,34 @@ async def download_photo(session: aiohttp.ClientSession, url: str):
 
 def format_car_message(car: dict, num: int, for_admin: bool = False) -> str:
     price = car.get("price", 0)
-    total_cost = car.get("total_cost_usd", 0)
-    bishkek_price = car.get("bishkek_price_usd", 0)
-    profit = car.get("profit_usd", 0)
-    roi = car.get("roi_percent", 0)
-    ai_comment = car.get("ai_comment", "")
     url = car.get("url", "")
+    timer = car.get("timer", "")
+    sale_date = car.get("sale_date", "")
+    odometer = car.get("odometer", "")
+    damage = car.get("damage", "Нет данных")
+    ai_comment = car.get("ai_comment", "")
 
     msg = (
         f"🏆 *#{num} | {car.get('title', '?')}*\n"
         f"━━━━━━━━━━━━━━━━\n"
-        f"🏷 Источник: {car.get('source', '')}\n"
-        f"💰 Цена на аукционе: *${price:,.0f}*\n"
-        f"🔨 Ставок: {car.get('bids', 0)} {car.get('demand', '')}\n"
-        f"🔧 Повреждения: {car.get('damage', '?')}\n\n"
-        f"📦 Итого с доставкой: *${total_cost:,}*\n"
-        f"💵 Цена в Бишкеке: *${bishkek_price:,}*\n"
-        f"📈 Прибыль: *+${profit:,}* ({roi}% ROI)\n"
+        f"💰 Цена аукциона: *${price:,.0f}*\n"
+        f"🔧 Повреждения: {damage}\n"
     )
+
+    if odometer:
+        msg += f"🛣 Пробег: {odometer}\n"
+
+    if sale_date:
+        msg += f"📅 Дата аукциона: {sale_date}\n"
+
+    if timer:
+        msg += f"{timer}\n"
 
     if ai_comment:
         msg += f"\n🤖 *AI:* _{ai_comment}_\n"
 
     if url:
-        link_text = "🔗 [Открыть лот на аукционе]" if for_admin else "🔗 [Смотреть лот]"
-        msg += f"\n{link_text}({url})"
+        msg += f"\n🔗 [Смотреть лот на bid\\.cars]({url})"
 
     return msg
 
