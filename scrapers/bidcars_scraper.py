@@ -20,14 +20,16 @@ def get_driver():
 
 async def scrape_bidcars(settings: dict = None) -> list[dict]:
     from config import POPULAR_BRANDS
-    brands = (settings or {}).get("brands", POPULAR_BRANDS[:5])
-    models_filter = (settings or {}).get("models", [])
-    filters = settings or {}
+    s = settings or {}
+    brands = s.get("brands", POPULAR_BRANDS[:5])
+    models_filter = s.get("models", [])
+    max_year_age = s.get("max_year_age", 10)
+    min_year = datetime.now().year - max_year_age
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _scrape_sync, brands[:3], models_filter, filters)
+    return await loop.run_in_executor(None, _scrape_sync, brands[:3], models_filter, s, min_year)
 
 
-def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]:
+def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int = 2015) -> list[dict]:
     results = []
     driver = None
     try:
@@ -38,7 +40,7 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]
             for model in search_list:
                 try:
                     label = f"{brand} {model}" if model else brand
-                    lot_urls = _get_lot_urls(driver, brand, model)
+                    lot_urls = _get_lot_urls(driver, brand, model, min_year)
                     logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}")
                     cars = []
                     for url in lot_urls[:5]:
@@ -72,7 +74,7 @@ def _js_click(driver, el):
     driver.execute_script("arguments[0].click();", el)
 
 
-def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
+def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
@@ -118,6 +120,18 @@ def _get_lot_urls(driver, brand: str, model: str) -> list[str]:
             time.sleep(2)
         except Exception:
             pass
+
+    # Year From
+    try:
+        year_from_btn = driver.find_element(By.CSS_SELECTOR, ".search_year_from .dropdown-toggle")
+        _js_click(driver, year_from_btn)
+        time.sleep(1)
+        year_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and text()='{min_year}']")
+        _js_click(driver, year_el)
+        time.sleep(1)
+        logger.info(f"bid.cars: год от {min_year}")
+    except Exception as e:
+        logger.warning(f"bid.cars год от: {e}")
 
     # Search
     try:
