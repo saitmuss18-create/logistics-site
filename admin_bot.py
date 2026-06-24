@@ -12,6 +12,8 @@ SETTINGS_FILE = Path("settings.json")
 
 ALL_VEHICLE_TYPES = ["Автомобиль", "Мотоцикл", "ATV", "Гидроцикл", "Снегоход", "Лодка"]
 
+ALL_SOURCES = ["bid.cars", "Copart"]
+
 ALL_CONDITIONS = [
     "✅ На ходу",
     "🟢 Лёгкие повреждения",
@@ -63,6 +65,7 @@ def load_settings() -> dict:
         "brands": ALL_BRANDS[:5], "models": [], "check_interval_hours": 6,
         "vehicle_types": ["Автомобиль"],
         "conditions": [],
+        "sources": ["bid.cars", "Copart"],
     }
 
 
@@ -99,11 +102,26 @@ async def answer_callback(session, callback_id):
 
 
 def main_menu_keyboard():
+    s = load_settings()
+    sources = s.get("sources", ["bid.cars", "Copart"])
+    src_label = " + ".join(sources) if sources else "не выбрано"
     return [
         [{"text": "⚙️ Фильтры", "callback_data": "menu_filters"}],
+        [{"text": f"🌐 Источники: {src_label}", "callback_data": "set_sources"}],
         [{"text": "🚀 Запустить сейчас", "callback_data": "menu_run"}],
         [{"text": "📊 Текущие настройки", "callback_data": "menu_status"}],
     ]
+
+
+def sources_keyboard():
+    s = load_settings()
+    selected = s.get("sources", ["bid.cars", "Copart"])
+    rows = []
+    for src in ALL_SOURCES:
+        mark = "✅" if src in selected else "☐"
+        rows.append([{"text": f"{mark} {src}", "callback_data": f"src_{src.replace('.', '_')}"}])
+    rows.append([{"text": "◀️ Назад", "callback_data": "menu_back"}])
+    return rows
 
 
 def filters_keyboard():
@@ -199,11 +217,13 @@ def status_text():
     brands = ", ".join(s.get("brands", []))
     models = s.get("models", [])
     model_text = "\n".join(f"  • {m.split(':')[1]}" for m in models) if models else "  Все модели"
+    sources = ", ".join(s.get("sources", ["bid.cars", "Copart"]))
     vtypes = ", ".join(s.get("vehicle_types", ["Автомобиль"]))
     conds = s.get("conditions", [])
     cond_text = "\n".join(f"  • {c}" for c in conds) if conds else "  Все состояния"
     return (
         f"📊 *Текущие настройки:*\n\n"
+        f"🌐 Источники: {sources}\n"
         f"🚙 Типы ТС: {vtypes}\n"
         f"🚦 Состояния:\n{cond_text}\n"
         f"📅 Год: от {min_year} (не старше {s['max_year_age']} лет)\n"
@@ -267,6 +287,7 @@ async def handle_message(session, msg):
         return
 
     if text in ("/start", "/menu"):
+        _waiting_for.pop(chat_id, None)  # сбрасываем любое ожидание
         await send(session, chat_id, "👋 *MFR AUTO Admin Panel*\n\nВыбери действие:", main_menu_keyboard())
 
 
@@ -289,10 +310,30 @@ async def handle_callback(session, cb):
     elif data == "menu_status":
         await edit(session, chat_id, msg_id, status_text(), [[{"text": "◀️ Назад", "callback_data": "menu_back"}]])
 
+    elif data == "set_sources":
+        await edit(session, chat_id, msg_id, "🌐 *Выбери источники поиска:*", sources_keyboard())
+
+    elif data.startswith("src_"):
+        src_key = data[4:].replace("_", ".")
+        # bid_cars → bid.cars, Copart → Copart
+        matched = next((s for s in ALL_SOURCES if s.replace(".", "_") == data[4:]), None)
+        if matched:
+            s = load_settings()
+            srcs = s.get("sources", list(ALL_SOURCES))
+            if matched in srcs:
+                srcs.remove(matched)
+            else:
+                srcs.append(matched)
+            if not srcs:
+                srcs = list(ALL_SOURCES)
+            s["sources"] = srcs
+            save_settings(s)
+        await edit(session, chat_id, msg_id, "🌐 *Выбери источники поиска:*", sources_keyboard())
+
     elif data == "menu_run":
-        await edit(session, chat_id, msg_id, "🚀 Запускаю поиск...", None)
-        from scheduler import run_once
-        asyncio.create_task(run_once())
+        await edit(session, chat_id, msg_id, "🚀 *Запускаю поиск...*", None)
+        from scheduler import run_once_with_feedback
+        asyncio.create_task(run_once_with_feedback(session, chat_id))
 
     elif data == "set_year_age":
         _waiting_for[chat_id] = "year_age"
