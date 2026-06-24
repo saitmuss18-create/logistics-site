@@ -58,4 +58,10 @@ async def run_scheduler():
 
 
 async def run_all():
-    await asyncio.gather(run_scheduler(), run_admin_bot())
+    loop = asyncio.get_event_loop()
+    # admin_bot запускаем сразу — отвечает на /start в любой момент
+    # run_scheduler запускаем с задержкой 2 сек чтобы admin_bot успел стартовать
+    async def delayed_scheduler():
+        await asyncio.sleep(2)
+        await run_scheduler()
+    await asyncio.gather(run_admin_bot(), delayed_scheduler())
