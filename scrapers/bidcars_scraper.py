@@ -169,16 +169,33 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     driver.execute_script("window.scrollTo(0, 0);")
     time.sleep(1)
 
-    # Заголовок
+    # Заголовок — берём из URL (там есть год-марка-модель)
+    # URL вида: /en/lot/0-45399688/2010-Toyota-Prius-JTDKN3DU8A1213119
     title = brand
-    for sel in ["h1", ".lot-title", "[class*='vehicle-title']"]:
-        try:
-            el = driver.find_element(By.CSS_SELECTOR, sel)
-            if el.text.strip():
-                title = el.text.strip()
-                break
-        except Exception:
-            pass
+    try:
+        url_parts = url.rstrip("/").split("/")
+        slug = url_parts[-1]  # 2010-Toyota-Prius-JTDKN3DU8A1213119
+        # Убираем VIN (последний элемент после дефиса, 17 символов)
+        parts = slug.split("-")
+        # VIN обычно последний — 17 символов букв и цифр
+        if parts and len(parts[-1]) == 17 and parts[-1].isalnum():
+            parts = parts[:-1]
+        title = " ".join(parts)  # 2010 Toyota Prius
+    except Exception:
+        pass
+
+    # Если из URL не получилось — берём из h1
+    if not title or title == brand:
+        for sel in ["h1", ".lot-title", "[class*='vehicle-title']"]:
+            try:
+                el = driver.find_element(By.CSS_SELECTOR, sel)
+                t = el.text.strip()
+                # Не берём если это VIN (17 символов без пробелов)
+                if t and not (len(t) == 17 and t.isalnum()):
+                    title = t
+                    break
+            except Exception:
+                pass
 
     body_text = driver.find_element(By.TAG_NAME, "body").text
 
