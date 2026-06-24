@@ -25,10 +25,8 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
     models_filter = s.get("models", [])
     max_year_age = s.get("max_year_age", 10)
     min_year = datetime.now().year - max_year_age
-    from concurrent.futures import ProcessPoolExecutor
     loop = asyncio.get_event_loop()
-    with ProcessPoolExecutor(max_workers=1) as pool:
-        return await loop.run_in_executor(pool, _scrape_sync, brands[:3], models_filter, s, min_year)
+    return await loop.run_in_executor(None, _scrape_sync, brands[:3], models_filter, s, min_year)
 
 
 def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int = 2015) -> list[dict]:
