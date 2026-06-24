@@ -47,16 +47,20 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
     max_year_age = s.get("max_year_age", 10)
     min_year = datetime.now().year - max_year_age
     vehicle_types = s.get("vehicle_types", ["Автомобиль"])
+    conditions_filter = s.get("conditions", [])
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
-        None, _scrape_sync, brands[:3], models_filter, s, min_year, vehicle_types
+        None, _scrape_sync, brands[:3], models_filter, s, min_year, vehicle_types, conditions_filter
     )
 
 
 def _scrape_sync(brands: list, models_filter: list, filters: dict,
-                 min_year: int = 2015, vehicle_types: list = None) -> list[dict]:
+                 min_year: int = 2015, vehicle_types: list = None,
+                 conditions_filter: list = None) -> list[dict]:
     if vehicle_types is None:
         vehicle_types = ["Автомобиль"]
+    if conditions_filter is None:
+        conditions_filter = []
     results = []
     driver = None
     seen = _load_seen()
@@ -78,6 +82,20 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict,
                             try:
                                 car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
                                 if car:
+                                    if conditions_filter:
+                                        from publisher.telegram_publisher import classify_condition
+                                        cond = classify_condition(car.get("damage", ""))
+                                        # Убираем иконку для сравнения
+                                        cond_clean = cond.split(" ", 1)[-1] if cond else ""
+                                        match = any(
+                                            cond == f or cond_clean in f or f in cond
+                                            for f in conditions_filter
+                                        )
+                                        if not match:
+                                            logger.debug(f"Пропуск по состоянию '{cond}': {url}")
+                                            new_seen.add(url)
+                                            time.sleep(1.5)
+                                            continue
                                     cars.append(car)
                                     new_seen.add(url)
                                 time.sleep(1.5)

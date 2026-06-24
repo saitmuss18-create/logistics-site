@@ -12,6 +12,22 @@ SETTINGS_FILE = Path("settings.json")
 
 ALL_VEHICLE_TYPES = ["Автомобиль", "Мотоцикл", "ATV", "Гидроцикл", "Снегоход", "Лодка"]
 
+ALL_CONDITIONS = [
+    "✅ На ходу",
+    "🟢 Лёгкие повреждения",
+    "🟡 Удар спереди",
+    "🟡 Удар сзади",
+    "🟡 Боковой удар",
+    "🟠 Средние повреждения",
+    "🔴 Тяжёлые повреждения",
+    "🔴 Тяжёлый удар спереди",
+    "🔴 Тяжёлый удар сзади",
+    "🔴 Тяжёлый боковой удар",
+    "💧 Потоп / вода",
+    "🔥 Пожар",
+    "🔓 Кража / вандализм",
+]
+
 ALL_BRANDS = [
     "Toyota", "Lexus", "BMW", "Mercedes", "Hyundai",
     "Kia", "Honda", "Nissan", "Audi", "Chevrolet",
@@ -45,7 +61,8 @@ def load_settings() -> dict:
     return {
         "max_year_age": 10, "max_price_usd": 20000, "min_bids": 5,
         "brands": ALL_BRANDS[:5], "models": [], "check_interval_hours": 6,
-        "vehicle_types": ["Автомобиль"]
+        "vehicle_types": ["Автомобиль"],
+        "conditions": [],
     }
 
 
@@ -95,8 +112,11 @@ def filters_keyboard():
     model_label = f"✅ {model_count} выбрано" if model_count else "Все модели"
     vtypes = s.get("vehicle_types", ["Автомобиль"])
     vtype_label = ", ".join(vtypes) if vtypes else "Автомобиль"
+    conds = s.get("conditions", [])
+    cond_label = f"✅ {len(conds)} выбрано" if conds else "Все состояния"
     return [
         [{"text": f"🚙 Тип ТС: {vtype_label}", "callback_data": "set_vehicle_types"}],
+        [{"text": f"🚦 Состояние: {cond_label}", "callback_data": "set_conditions"}],
         [{"text": f"📅 Возраст: не старше {s['max_year_age']} лет", "callback_data": "set_year_age"}],
         [{"text": f"💰 Макс. цена: ${s['max_price_usd']:,}", "callback_data": "set_price"}],
         [{"text": f"🔨 Мин. ставок: {s['min_bids']}", "callback_data": "set_bids"}],
@@ -105,6 +125,19 @@ def filters_keyboard():
         [{"text": f"🔍 Модели: {model_label}", "callback_data": "set_models_brands"}],
         [{"text": "◀️ Назад", "callback_data": "menu_back"}],
     ]
+
+
+def conditions_keyboard():
+    s = load_settings()
+    selected = s.get("conditions", [])
+    rows = []
+    for cond in ALL_CONDITIONS:
+        mark = "✅" if cond in selected else "☐"
+        safe_key = cond.replace(" ", "_").replace("/", "-")[:30]
+        rows.append([{"text": f"{mark} {cond}", "callback_data": f"cond_{safe_key}"}])
+    rows.append([{"text": "🗑 Сбросить (все состояния)", "callback_data": "cond_reset"}])
+    rows.append([{"text": "◀️ Назад", "callback_data": "menu_filters"}])
+    return rows
 
 
 def vehicle_types_keyboard():
@@ -167,9 +200,12 @@ def status_text():
     models = s.get("models", [])
     model_text = "\n".join(f"  • {m.split(':')[1]}" for m in models) if models else "  Все модели"
     vtypes = ", ".join(s.get("vehicle_types", ["Автомобиль"]))
+    conds = s.get("conditions", [])
+    cond_text = "\n".join(f"  • {c}" for c in conds) if conds else "  Все состояния"
     return (
         f"📊 *Текущие настройки:*\n\n"
         f"🚙 Типы ТС: {vtypes}\n"
+        f"🚦 Состояния:\n{cond_text}\n"
         f"📅 Год: от {min_year} (не старше {s['max_year_age']} лет)\n"
         f"💰 Макс. цена: ${s['max_price_usd']:,}\n"
         f"🔨 Мин. ставок: {s['min_bids']}\n"
@@ -276,6 +312,40 @@ async def handle_callback(session, cb):
 
     elif data == "set_vehicle_types":
         await edit(session, chat_id, msg_id, "🚙 *Выбери типы транспортных средств:*", vehicle_types_keyboard())
+
+    elif data == "set_conditions":
+        await edit(session, chat_id, msg_id,
+                   "🚦 *Выбери состояния авто:*\n_(пусто = показывать все)_",
+                   conditions_keyboard())
+
+    elif data == "cond_reset":
+        s = load_settings()
+        s["conditions"] = []
+        save_settings(s)
+        await edit(session, chat_id, msg_id,
+                   "🚦 *Выбери состояния авто:*\n_(пусто = показывать все)_",
+                   conditions_keyboard())
+
+    elif data.startswith("cond_"):
+        safe_key = data[5:]
+        # Восстанавливаем оригинальное название
+        matched = None
+        for cond in ALL_CONDITIONS:
+            if cond.replace(" ", "_").replace("/", "-")[:30] == safe_key:
+                matched = cond
+                break
+        if matched:
+            s = load_settings()
+            conds = s.get("conditions", [])
+            if matched in conds:
+                conds.remove(matched)
+            else:
+                conds.append(matched)
+            s["conditions"] = conds
+            save_settings(s)
+        await edit(session, chat_id, msg_id,
+                   "🚦 *Выбери состояния авто:*\n_(пусто = показывать все)_",
+                   conditions_keyboard())
 
     elif data.startswith("vtype_"):
         vtype = data[6:]
