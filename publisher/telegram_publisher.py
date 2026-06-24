@@ -34,10 +34,10 @@ async def publish_to_telegram(cars: list[dict]):
 
             # Список фото лота (берём до 10 штук)
             all_images = car.get("images") or ([car["image"]] if car.get("image") else [])
-            # Фильтруем только фото с images.bid.cars или cs.copart.com
             car_images = [u for u in all_images if "images.bid.cars" in u or "cs.copart.com" in u or "mercury.bid.cars" in u]
             if not car_images and all_images:
                 car_images = all_images[:1]
+            logger.info(f"Авто #{i} '{car.get('title','')}': фото {len(car_images)} шт.")
 
             if car_images:
                 # Отправляем альбом (до 10 фото) в канал
@@ -127,9 +127,18 @@ async def download_photo(session: aiohttp.ClientSession, url: str):
     if not url:
         return None
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-            if resp.status == 200 and "image" in resp.content_type:
-                return await resp.read()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://bid.cars/",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+        }
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+            if resp.status == 200:
+                data = await resp.read()
+                if len(data) > 1000:  # больше 1KB — точно фото
+                    return data
+            else:
+                logger.debug(f"Фото статус {resp.status}: {url}")
     except Exception as e:
         logger.debug(f"Фото не загружено {url}: {e}")
     return None
