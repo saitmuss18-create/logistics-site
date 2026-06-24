@@ -38,11 +38,23 @@ async def scrape_copart(settings: dict = None) -> list[dict]:
 
 
 async def _fetch_copart(session, search: str, brand: str, filters: dict) -> list[dict]:
-    url = "https://www.copart.com/public/lots/search-results"
-    params = {"free": search, "page": 0, "size": 10, "sort": "bids,desc"}
+    url = "https://api.copart.com/v2/public/lots/search"
+    payload = {
+        "query": [search],
+        "filter": {},
+        "sort": ["bids_desc"],
+        "size": 10,
+        "start": 0,
+    }
+    headers = {
+        **HEADERS,
+        "Content-Type": "application/json",
+        "Origin": "https://www.copart.com",
+    }
 
-    async with session.get(url, params=params, timeout=15) as resp:
+    async with session.post(url, json=payload, headers=headers, timeout=15) as resp:
         if resp.status != 200:
+            logger.warning(f"Copart API статус {resp.status} для {search}")
             return _get_mock(brand)
         data = await resp.json()
 
