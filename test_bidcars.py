@@ -1,18 +1,14 @@
 """
 Запусти: python test_bidcars.py
-Откроет bid.cars, сохранит скриншот screenshot.png и выведет найденные данные.
 """
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 options = Options()
-# options.add_argument("--headless")  # Пока без headless — видим браузер
 options.add_argument("--window-size=1920,1080")
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -25,40 +21,41 @@ driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () =>
 
 print("Открываю bid.cars...")
 driver.get("https://bid.cars/en/search?make=toyota&sort=bids&order=desc")
-time.sleep(5)
 
-print(f"Заголовок страницы: {driver.title}")
+print("Жду 10 секунд...")
+time.sleep(10)
+
+# Прокручиваем страницу вниз
+driver.execute_script("window.scrollTo(0, 500)")
+time.sleep(3)
+driver.execute_script("window.scrollTo(0, 1500)")
+time.sleep(3)
+
+print(f"Заголовок: {driver.title}")
 print(f"URL: {driver.current_url}")
 
-# Скриншот
 driver.save_screenshot("screenshot.png")
-print("Скриншот сохранён: screenshot.png")
+print("Скриншот сохранён: screenshot.png — ОТКРОЙ ЕГО И ПОСМОТРИ")
 
-# Ищем все ссылки на лоты
-lot_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/'], a[href*='/en/lot']")
-print(f"\nНайдено ссылок на лоты: {len(lot_links)}")
+# Все ссылки на странице
+all_links = driver.find_elements(By.TAG_NAME, "a")
+print(f"\nВсего ссылок: {len(all_links)}")
+lot_links = [a for a in all_links if "/lot" in (a.get_attribute("href") or "")]
+print(f"Ссылок с /lot: {len(lot_links)}")
 for a in lot_links[:5]:
-    print(f"  Ссылка: {a.get_attribute('href')}")
+    print(f"  {a.get_attribute('href')}")
 
-# Ищем все картинки
+# Все картинки
 images = driver.find_elements(By.TAG_NAME, "img")
-print(f"\nНайдено изображений: {len(images)}")
-for img in images[:10]:
-    src = img.get_attribute("src") or img.get_attribute("data-src") or ""
-    if src and "http" in src and not src.endswith(".svg"):
-        print(f"  Фото: {src[:100]}")
+car_imgs = [i for i in images if any(x in (i.get_attribute("src") or "") for x in ["copart", "iaai", "bid.cars", "cdn", "upload", "photo", "car", "vehicle", "lot", "image"])]
+print(f"\nФото авто: {len(car_imgs)}")
+for img in car_imgs[:5]:
+    print(f"  {img.get_attribute('src')[:120]}")
 
-# Все классы элементов (для анализа структуры)
-all_els = driver.find_elements(By.CSS_SELECTOR, "[class]")
-classes = set()
-for el in all_els[:200]:
-    cls = el.get_attribute("class") or ""
-    for c in cls.split():
-        if any(w in c.lower() for w in ["lot", "card", "vehicle", "car", "item"]):
-            classes.add(cls[:80])
-print(f"\nКлассы карточек найдены:")
-for c in list(classes)[:15]:
-    print(f"  {c}")
+# Весь текст страницы (первые 2000 символов)
+body_text = driver.find_element(By.TAG_NAME, "body").text
+print(f"\nТекст страницы (первые 1000 символов):")
+print(body_text[:1000])
 
-input("\nНажми Enter чтобы закрыть браузер...")
+input("\nНажми Enter чтобы закрыть...")
 driver.quit()
