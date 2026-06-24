@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from config import ADMIN_CHAT_ID
+from config import TELEGRAM_TOKEN, ADMIN_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,8 @@ def save_settings(s: dict):
 
 
 def get_api():
-    return f"https://api.telegram.org/bot{os.getenv('TELEGRAM_TOKEN', '')}"
+    token = os.getenv('TELEGRAM_TOKEN') or TELEGRAM_TOKEN
+    return f"https://api.telegram.org/bot{token}"
 
 
 async def send(session, chat_id, text, keyboard=None):
