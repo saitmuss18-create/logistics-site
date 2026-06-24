@@ -1,10 +1,30 @@
 import asyncio
+import json
 import logging
 import random
 import time
 from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+SEEN_LOTS_FILE = Path("seen_lots.json")
+
+
+def _load_seen() -> set:
+    if SEEN_LOTS_FILE.exists():
+        try:
+            return set(json.loads(SEEN_LOTS_FILE.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return set()
+
+
+def _save_seen(seen: set):
+    try:
+        SEEN_LOTS_FILE.write_text(json.dumps(list(seen)), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def get_driver():
@@ -32,6 +52,8 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
 def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int = 2015) -> list[dict]:
     results = []
     driver = None
+    seen = _load_seen()
+    new_seen = set()
     try:
         driver = get_driver()
         for brand in brands:
@@ -41,17 +63,19 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                 try:
                     label = f"{brand} {model}" if model else brand
                     lot_urls = _get_lot_urls(driver, brand, model, min_year)
-                    logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}")
+                    new_urls = [u for u in lot_urls if u not in seen]
+                    logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}, новых: {len(new_urls)}")
                     cars = []
-                    for url in lot_urls[:10]:
+                    for url in new_urls[:10]:
                         try:
                             car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
                             if car:
                                 cars.append(car)
+                                new_seen.add(url)
                             time.sleep(1.5)
                         except Exception as e:
                             logger.debug(f"bid.cars лот {url}: {e}")
-                    logger.info(f"bid.cars: подходящих {len(cars)} для {label}")
+                    logger.info(f"bid.cars: подходящих новых {len(cars)} для {label}")
                     results.extend(cars)
                     time.sleep(2)
                 except Exception as e:
@@ -64,6 +88,11 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int
                 driver.quit()
             except Exception:
                 pass
+    # Сохраняем только новые просмотренные (не больше 5000 записей)
+    seen.update(new_seen)
+    if len(seen) > 5000:
+        seen = set(list(seen)[-5000:])
+    _save_seen(seen)
     return results
 
 
