@@ -9,7 +9,7 @@ print("Открываю bid.cars через undetected-chromedriver...")
 options = uc.ChromeOptions()
 options.add_argument("--window-size=1920,1080")
 
-driver = uc.Chrome(options=options)
+driver = uc.Chrome(options=options, version_main=149)
 
 def click(el):
     driver.execute_script("arguments[0].click();", el)
