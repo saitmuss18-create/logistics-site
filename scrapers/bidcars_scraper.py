@@ -3,31 +3,23 @@ import logging
 import random
 import time
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 
 logger = logging.getLogger(__name__)
 
 
 def get_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    return driver
+    try:
+        import undetected_chromedriver as uc
+        options = uc.ChromeOptions()
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--window-size=1920,1080")
+        driver = uc.Chrome(options=options, version_main=149)
+        return driver
+    except Exception as e:
+        logger.error(f"bid.cars: не удалось создать драйвер: {e}")
+        raise
 
 
 async def scrape_bidcars(settings: dict = None) -> list[dict]:
@@ -55,7 +47,7 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]
                     label = f"{brand} {model}" if model else brand
                     logger.info(f"bid.cars: найдено {len(cars)} лотов для {label}")
                     results.extend(cars)
-                    time.sleep(1)
+                    time.sleep(2)
                 except Exception as e:
                     logger.error(f"bid.cars ошибка {brand}: {e}")
                     results.extend(_get_mock(brand))
@@ -65,95 +57,164 @@ def _scrape_sync(brands: list, models_filter: list, filters: dict) -> list[dict]
             results.extend(_get_mock(b))
     finally:
         if driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except Exception:
+                pass
     return results
 
 
 def _scrape_page(driver, brand: str, model: str, filters: dict) -> list[dict]:
-    url = f"https://bid.cars/en/search?make={brand.lower()}"
-    if model:
-        url += f"&model={model.lower().replace(' ', '%20')}"
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
 
-    driver.get(url)
-    time.sleep(4)
+    def js_click(el):
+        driver.execute_script("arguments[0].click();", el)
 
-    # Ждём появления карточек
+    driver.get("https://bid.cars/en/search")
+    time.sleep(5)
+
+    # Выбираем Type = Automobile
     try:
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a.lot-card, .lot-card, [class*='VehicleCard'], [class*='lot-card']"))
+        type_btn = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_transport .dropdown-toggle"))
         )
-    except Exception:
-        # Пробуем любые карточки
-        time.sleep(3)
+        js_click(type_btn)
+        time.sleep(1)
+        automobile = driver.find_element(By.XPATH, "//a[contains(@class,'dropdown-item') and contains(text(),'Automobile')]")
+        js_click(automobile)
+        time.sleep(2)
+    except Exception as e:
+        logger.warning(f"bid.cars: не смог выбрать тип Automobile: {e}")
 
-    # Пробуем разные селекторы
-    cards = (
-        driver.find_elements(By.CSS_SELECTOR, "a.lot-card") or
-        driver.find_elements(By.CSS_SELECTOR, "[class*='VehicleCard']") or
-        driver.find_elements(By.CSS_SELECTOR, "[class*='lot-card']") or
-        driver.find_elements(By.CSS_SELECTOR, ".vehicle-card")
-    )
-
-    if not cards:
-        logger.debug(f"bid.cars: карточки не найдены для {brand}, page title: {driver.title[:50]}")
+    # Выбираем марку
+    try:
+        make_btn = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".search_make_filter .dropdown-toggle"))
+        )
+        js_click(make_btn)
+        time.sleep(1)
+        make_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and text()='{brand}']")
+        js_click(make_el)
+        time.sleep(2)
+    except Exception as e:
+        logger.warning(f"bid.cars: не смог выбрать марку {brand}: {e}")
         return _get_mock(brand)
 
-    cars = []
-    for card in cards[:6]:
+    # Выбираем модель если задана
+    if model:
         try:
-            # Ссылка на лот
-            lot_url = card.get_attribute("href") or ""
-            if not lot_url and card.tag_name != "a":
-                a = card.find_elements(By.TAG_NAME, "a")
-                lot_url = a[0].get_attribute("href") if a else ""
-            if not lot_url:
-                lot_url = f"https://bid.cars/en/search?make={brand.lower()}"
+            model_btn = driver.find_element(By.CSS_SELECTOR, ".search_model_filter .dropdown-toggle")
+            js_click(model_btn)
+            time.sleep(1)
+            model_el = driver.find_element(By.XPATH, f"//a[contains(@class,'dropdown-item') and contains(text(),'{model}')]")
+            js_click(model_el)
+            time.sleep(2)
+        except Exception:
+            pass
+
+    # Нажимаем Search
+    try:
+        search_btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
+        )
+        js_click(search_btn)
+        time.sleep(8)
+    except Exception as e:
+        logger.warning(f"bid.cars: не смог нажать Search: {e}")
+        return _get_mock(brand)
+
+    # Ждём карточки результатов
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/lot/'], a[href*='/en/lot/']"))
+        )
+    except Exception:
+        time.sleep(3)
+
+    # Извлекаем лоты
+    cars = []
+    lot_anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
+
+    # Группируем по href — берём только уникальные ссылки на лоты
+    seen_urls = set()
+    for a in lot_anchors:
+        href = a.get_attribute("href") or ""
+        if not href or href in seen_urls:
+            continue
+        # Пропускаем якорные ссылки и пагинацию
+        if "#" in href or "page=" in href:
+            continue
+        seen_urls.add(href)
+
+        try:
+            # Ищем контейнер карточки (родительский элемент ссылки)
+            card = a
 
             # Фото
-            img = card.find_elements(By.TAG_NAME, "img")
             img_url = ""
-            for i in img:
-                src = i.get_attribute("src") or i.get_attribute("data-src") or ""
-                if src and src.startswith("http") and not src.endswith(".svg"):
+            imgs = card.find_elements(By.TAG_NAME, "img")
+            for img in imgs:
+                src = img.get_attribute("src") or img.get_attribute("data-src") or img.get_attribute("data-lazy") or ""
+                if src and src.startswith("http") and not src.endswith(".svg") and "placeholder" not in src:
                     img_url = src
                     break
 
-            # Текстовые поля
-            texts = [el.text.strip() for el in card.find_elements(By.CSS_SELECTOR, "span, p, div, h2, h3") if el.text.strip()]
+            # Текст карточки
+            card_text = card.text or ""
+            lines = [l.strip() for l in card_text.split("\n") if l.strip()]
 
-            title = next((t for t in texts if len(t) > 5 and any(c.isalpha() for c in t)), f"{brand}")
-            price = 0.0
-            bids = 0
-            for t in texts:
-                if "$" in t or "USD" in t:
-                    try:
-                        price = float("".join(c for c in t if c.isdigit() or c == ".") or "0")
-                    except:
-                        pass
-                if "bid" in t.lower() and any(c.isdigit() for c in t):
-                    try:
-                        bids = int("".join(filter(str.isdigit, t)) or "0")
-                    except:
-                        pass
+            # Заголовок — первая строка с буквами
+            title = next((l for l in lines if len(l) > 5 and any(c.isalpha() for c in l)), f"{brand}")
 
+            # Год
             year = datetime.now().year
-            for t in texts:
-                digits = "".join(filter(str.isdigit, t))
+            for l in lines:
+                digits = "".join(filter(str.isdigit, l))
                 if len(digits) == 4 and 2000 <= int(digits) <= datetime.now().year:
                     year = int(digits)
                     break
 
+            # Цена (Current Bid)
+            price = 0.0
+            for l in lines:
+                if "$" in l:
+                    try:
+                        nums = "".join(c for c in l if c.isdigit() or c == ".")
+                        if nums:
+                            price = float(nums)
+                            break
+                    except Exception:
+                        pass
+
+            # Повреждения
+            damage = "Unknown"
+            damage_keywords = ["damage", "burn", "hail", "flood", "rear", "front", "side", "normal", "minor", "run"]
+            for l in lines:
+                if any(k in l.lower() for k in damage_keywords):
+                    damage = l
+                    break
+
             car = {
-                "source": "bid.cars", "brand": brand,
+                "source": "bid.cars",
+                "brand": brand,
                 "title": title,
-                "price": price, "bids": bids,
-                "damage": "Unknown", "year": year,
-                "image": img_url, "url": lot_url,
+                "price": price,
+                "bids": 1,
+                "damage": damage,
+                "year": year,
+                "image": img_url,
+                "url": href,
             }
             if _is_suitable(car, filters):
                 cars.append(car)
+
         except Exception as e:
             logger.debug(f"bid.cars card parse: {e}")
+
+        if len(cars) >= 6:
+            break
 
     return cars if cars else _get_mock(brand)
 
@@ -161,8 +222,7 @@ def _scrape_page(driver, brand: str, model: str, filters: dict) -> list[dict]:
 def _is_suitable(car: dict, filters: dict) -> bool:
     y = datetime.now().year
     return (car["year"] >= y - filters.get("max_year_age", 10)
-            and car["price"] <= filters.get("max_price_usd", 20000)
-            and car["bids"] >= filters.get("min_bids", 5))
+            and (car["price"] == 0 or car["price"] <= filters.get("max_price_usd", 20000)))
 
 
 def _get_mock(brand: str) -> list[dict]:
@@ -176,7 +236,7 @@ def _get_mock(brand: str) -> list[dict]:
     return [{
         "source": "bid.cars", "brand": brand,
         "title": f"{year} {brand} {model}",
-        "price": random.randint(3500, 16000), "bids": random.randint(5, 45),
+        "price": random.randint(3500, 16000), "bids": 5,
         "damage": "Hail", "year": year, "image": "",
         "url": f"https://bid.cars/en/search?make={brand.lower()}",
     }]
