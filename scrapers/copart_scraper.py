@@ -31,26 +31,30 @@ def get_driver():
 async def scrape_copart(settings: dict = None) -> list[dict]:
     from config import POPULAR_BRANDS, FILTERS
     brands = (settings or {}).get("brands", POPULAR_BRANDS[:5])
+    models = (settings or {}).get("models", [])
     filters = {**FILTERS, **(settings or {})}
 
     loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(None, _scrape_copart_sync, brands[:3], filters)
+    results = await loop.run_in_executor(None, _scrape_copart_sync, brands[:3], models, filters)
     return results
 
 
-def _scrape_copart_sync(brands: list, filters: dict) -> list[dict]:
+def _scrape_copart_sync(brands: list, models: list, filters: dict) -> list[dict]:
     results = []
     driver = None
     try:
         driver = get_driver()
         for brand in brands:
-            try:
-                cars = _scrape_brand(driver, brand, filters)
-                results.extend(cars)
-                logger.info(f"Copart: найдено {len(cars)} лотов для {brand}")
-            except Exception as e:
-                logger.error(f"Copart ошибка для {brand}: {e}")
-                results.extend(_get_mock(brand))
+            brand_models = [m.split(":")[1] for m in models if m.startswith(f"{brand}:")]
+            search_terms = [f"{brand} {m}" for m in brand_models] if brand_models else [brand]
+            for term in search_terms[:2]:
+                try:
+                    cars = _scrape_brand(driver, term, filters)
+                    results.extend(cars)
+                    logger.info(f"Copart: найдено {len(cars)} лотов для {term}")
+                except Exception as e:
+                    logger.error(f"Copart ошибка для {term}: {e}")
+                    results.extend(_get_mock(brand))
     except Exception as e:
         logger.error(f"Copart Selenium ошибка: {e}")
         for brand in brands:
