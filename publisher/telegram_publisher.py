@@ -145,6 +145,62 @@ async def download_photo(session: aiohttp.ClientSession, url: str):
     return None
 
 
+def classify_condition(damage: str) -> str:
+    """Определяет состояние авто по тексту повреждений."""
+    d = (damage or "").lower()
+
+    # Нет повреждений / на ходу
+    if any(x in d for x in ["no damage", "нет повреждений", "minor dents", "runs and drives",
+                              "на ходу", "minor scratches", "paint", "hail", "grad"]):
+        if any(x in d for x in ["runs and drives", "на ходу"]):
+            return "✅ На ходу"
+        return "🟢 Лёгкие повреждения"
+
+    # Удар спереди
+    if any(x in d for x in ["front end", "front impact", "frontal", "удар спереди",
+                              "front", "hood", "bumper front", "передн"]):
+        if any(x in d for x in ["major", "severe", "total", "тяжёл", "сильн"]):
+            return "🔴 Тяжёлый удар спереди"
+        return "🟡 Удар спереди"
+
+    # Удар сзади
+    if any(x in d for x in ["rear end", "rear impact", "rear", "удар сзади", "задн", "trunk"]):
+        if any(x in d for x in ["major", "severe", "тяжёл", "сильн"]):
+            return "🔴 Тяжёлый удар сзади"
+        return "🟡 Удар сзади"
+
+    # Боковой удар
+    if any(x in d for x in ["side", "сбоку", "боков", "left", "right", "door", "pillar"]):
+        if any(x in d for x in ["major", "severe", "тяжёл", "сильн"]):
+            return "🔴 Тяжёлый боковой удар"
+        return "🟡 Боковой удар"
+
+    # Вода / потоп
+    if any(x in d for x in ["flood", "water", "затоплен", "вода", "потоп"]):
+        return "💧 Потоп / вода"
+
+    # Огонь
+    if any(x in d for x in ["fire", "burn", "огонь", "пожар", "горел"]):
+        return "🔥 Пожар"
+
+    # Вандализм / кража
+    if any(x in d for x in ["theft", "vandal", "stolen", "кража", "вандал"]):
+        return "🔓 Кража / вандализм"
+
+    # Полная гибель / тяжёлые
+    if any(x in d for x in ["major", "severe", "total loss", "полная гибель", "тяжёл"]):
+        return "🔴 Тяжёлые повреждения"
+
+    # Средние
+    if any(x in d for x in ["moderate", "средн", "medium", "collision"]):
+        return "🟠 Средние повреждения"
+
+    if d and d != "нет данных":
+        return f"🟡 {damage[:40]}"
+
+    return "❓ Нет данных"
+
+
 def format_car_message(car: dict, num: int, for_admin: bool = False) -> str:
     price = car.get("price", 0)
     url = car.get("url", "")
@@ -153,11 +209,13 @@ def format_car_message(car: dict, num: int, for_admin: bool = False) -> str:
     odometer = car.get("odometer", "")
     damage = car.get("damage", "Нет данных")
     ai_comment = car.get("ai_comment", "")
+    condition = classify_condition(damage)
 
     msg = (
         f"🏆 *#{num} | {car.get('title', '?')}*\n"
         f"━━━━━━━━━━━━━━━━\n"
         f"💰 Цена аукциона: *${price:,.0f}*\n"
+        f"🚦 Состояние: *{condition}*\n"
         f"🔧 Повреждения: {damage}\n"
     )
 
