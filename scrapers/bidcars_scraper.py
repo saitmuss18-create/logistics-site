@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 SEEN_LOTS_FILE = Path("seen_lots.json")
 
+ALL_VEHICLE_TYPES = ["Автомобиль", "Мотоцикл", "ATV", "Гидроцикл", "Снегоход", "Лодка"]
+
 
 def _load_seen() -> set:
     if SEEN_LOTS_FILE.exists():
@@ -44,41 +46,48 @@ async def scrape_bidcars(settings: dict = None) -> list[dict]:
     models_filter = s.get("models", [])
     max_year_age = s.get("max_year_age", 10)
     min_year = datetime.now().year - max_year_age
+    vehicle_types = s.get("vehicle_types", ["Автомобиль"])
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _scrape_sync, brands[:3], models_filter, s, min_year)
+    return await loop.run_in_executor(
+        None, _scrape_sync, brands[:3], models_filter, s, min_year, vehicle_types
+    )
 
 
-def _scrape_sync(brands: list, models_filter: list, filters: dict, min_year: int = 2015) -> list[dict]:
+def _scrape_sync(brands: list, models_filter: list, filters: dict,
+                 min_year: int = 2015, vehicle_types: list = None) -> list[dict]:
+    if vehicle_types is None:
+        vehicle_types = ["Автомобиль"]
     results = []
     driver = None
     seen = _load_seen()
     new_seen = set()
     try:
         driver = get_driver()
-        for brand in brands:
-            brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
-            search_list = brand_models[:2] if brand_models else [None]
-            for model in search_list:
-                try:
-                    label = f"{brand} {model}" if model else brand
-                    lot_urls = _get_lot_urls(driver, brand, model, min_year)
-                    new_urls = [u for u in lot_urls if u not in seen]
-                    logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}, новых: {len(new_urls)}")
-                    cars = []
-                    for url in new_urls[:20]:
-                        try:
-                            car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
-                            if car:
-                                cars.append(car)
-                                new_seen.add(url)
-                            time.sleep(1.5)
-                        except Exception as e:
-                            logger.debug(f"bid.cars лот {url}: {e}")
-                    logger.info(f"bid.cars: подходящих новых {len(cars)} для {label}")
-                    results.extend(cars)
-                    time.sleep(2)
-                except Exception as e:
-                    logger.error(f"bid.cars ошибка {brand}: {e}")
+        for vtype in vehicle_types:
+            for brand in brands:
+                brand_models = [m.split(":")[1] for m in models_filter if m.startswith(f"{brand}:")]
+                search_list = brand_models[:2] if brand_models else [None]
+                for model in search_list:
+                    try:
+                        label = f"{vtype} / {brand} {model}" if model else f"{vtype} / {brand}"
+                        lot_urls = _get_lot_urls(driver, vtype, brand, model, min_year)
+                        new_urls = [u for u in lot_urls if u not in seen]
+                        logger.info(f"bid.cars: найдено {len(lot_urls)} лотов для {label}, новых: {len(new_urls)}")
+                        cars = []
+                        for url in new_urls[:20]:
+                            try:
+                                car = _parse_lot_page(driver, url, brand, {**filters, "_min_year": min_year})
+                                if car:
+                                    cars.append(car)
+                                    new_seen.add(url)
+                                time.sleep(1.5)
+                            except Exception as e:
+                                logger.debug(f"bid.cars лот {url}: {e}")
+                        logger.info(f"bid.cars: подходящих новых {len(cars)} для {label}")
+                        results.extend(cars)
+                        time.sleep(2)
+                    except Exception as e:
+                        logger.error(f"bid.cars ошибка {brand}: {e}")
     except Exception as e:
         logger.error(f"bid.cars Selenium: {e}")
     finally:
@@ -98,41 +107,160 @@ def _js_click(driver, el):
     driver.execute_script("arguments[0].click();", el)
 
 
+def _select_type_dropdown(driver, value: str) -> bool:
+    """Выбирает тип транспортного средства из первого дропдауна на странице поиска."""
+    from selenium.webdriver.common.by import By
+    try:
+        # Находим все dropdown-toggle кнопки
+        toggles = driver.find_elements(By.CSS_SELECTOR, ".dropdown-toggle")
+        type_toggle = None
+        for t in toggles:
+            txt = t.text.strip().lower()
+            # Тип ТС обычно первый дропдаун, его текст — одно из известных значений
+            for known in ["автомобиль", "мотоцикл", "atv", "гидроцикл", "снегоход", "лодка",
+                          "automobile", "motorcycle", "boat", "тип", "type"]:
+                if known in txt:
+                    type_toggle = t
+                    break
+            if type_toggle:
+                break
+
+        # Если не нашли по тексту — берём первый дропдаун
+        if not type_toggle and toggles:
+            type_toggle = toggles[0]
+
+        if not type_toggle:
+            logger.warning("bid.cars: не найден дропдаун типа ТС")
+            return False
+
+        _js_click(driver, type_toggle)
+        time.sleep(1.5)
+
+        # Ищем открытое меню — пробуем разные селекторы
+        for menu_selector in [
+            ".dropdown-menu.show li",
+            ".dropdown-menu.show .dropdown-item",
+            ".dropdown-menu.show a",
+            ".dropdown-menu li",
+            ".show ul li",
+        ]:
+            items = driver.find_elements(By.CSS_SELECTOR, menu_selector)
+            if not items:
+                continue
+            for item in items:
+                if item.text.strip() == value:
+                    _js_click(driver, item)
+                    time.sleep(1.5)
+                    logger.info(f"bid.cars: тип '{value}' выбран")
+                    return True
+            # Частичное совпадение
+            for item in items:
+                if value.lower() in item.text.lower():
+                    _js_click(driver, item)
+                    time.sleep(1.5)
+                    logger.info(f"bid.cars: тип '{value}' выбран (частичное совп.)")
+                    return True
+
+        # Пробуем через XPath
+        try:
+            from selenium.webdriver.common.by import By as B
+            els = driver.find_elements(B.XPATH, f"//*[contains(@class,'dropdown-menu')]//li[normalize-space()='{value}']")
+            if not els:
+                els = driver.find_elements(B.XPATH, f"//*[contains(@class,'dropdown-menu')]//*[contains(text(),'{value}')]")
+            if els:
+                _js_click(driver, els[0])
+                time.sleep(1.5)
+                logger.info(f"bid.cars: тип '{value}' выбран через XPath")
+                return True
+        except Exception as xe:
+            logger.debug(f"XPath тип: {xe}")
+
+        # Закрываем меню если ничего не нашли
+        _js_click(driver, type_toggle)
+        time.sleep(0.5)
+        logger.warning(f"bid.cars: не нашли '{value}' в дропдауне типа")
+    except Exception as e:
+        logger.debug(f"_select_type_dropdown: {e}")
+    return False
+
+
 def _select_dropdown(driver, btn_selector: str, value: str) -> bool:
     """Открывает дропдаун и выбирает значение. Возвращает True если успешно."""
     from selenium.webdriver.common.by import By
     try:
         btn = driver.find_element(By.CSS_SELECTOR, btn_selector)
         _js_click(driver, btn)
-        time.sleep(1)
-        # Ищем элемент с точным или частичным совпадением текста
-        items = driver.find_elements(By.CSS_SELECTOR, ".dropdown-menu.show .dropdown-item")
-        for item in items:
-            if item.text.strip() == value:
-                _js_click(driver, item)
-                time.sleep(1.5)
-                return True
-        # Частичное совпадение
-        for item in items:
-            if value in item.text:
-                _js_click(driver, item)
-                time.sleep(1.5)
-                return True
+        time.sleep(1.2)
+
+        for menu_sel in [
+            ".dropdown-menu.show .dropdown-item",
+            ".dropdown-menu.show li",
+            ".dropdown-menu.show a",
+        ]:
+            items = driver.find_elements(By.CSS_SELECTOR, menu_sel)
+            if not items:
+                continue
+            for item in items:
+                if item.text.strip() == value:
+                    _js_click(driver, item)
+                    time.sleep(1.5)
+                    return True
+            for item in items:
+                if value in item.text:
+                    _js_click(driver, item)
+                    time.sleep(1.5)
+                    return True
+
+        # XPath fallback
+        from selenium.webdriver.common.by import By as B
+        els = driver.find_elements(B.XPATH,
+            f"//*[contains(@class,'dropdown-menu')]//*[normalize-space()='{value}']")
+        if els:
+            _js_click(driver, els[0])
+            time.sleep(1.5)
+            return True
     except Exception as e:
         logger.debug(f"_select_dropdown {btn_selector}={value}: {e}")
     return False
 
 
-def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[str]:
+def _set_year(driver, min_year: int):
+    """Устанавливает год 'С' через JS."""
+    from selenium.webdriver.common.by import By
+    try:
+        all_inputs = driver.find_elements(By.TAG_NAME, "input")
+        year_inp = None
+        for inp in all_inputs:
+            ph = (inp.get_attribute("placeholder") or "").strip()
+            nm = (inp.get_attribute("name") or "").lower()
+            if ph in ("С", "с", "From", "from") or "year_from" in nm or "yearfrom" in nm:
+                year_inp = inp
+                break
+        if not year_inp:
+            for inp in all_inputs:
+                if inp.get_attribute("type") == "number":
+                    year_inp = inp
+                    break
+        if year_inp:
+            driver.execute_script("arguments[0].value = arguments[1];", year_inp, str(min_year))
+            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", year_inp)
+            driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", year_inp)
+            time.sleep(0.5)
+            logger.info(f"bid.cars: год от {min_year} установлен")
+        else:
+            logger.warning("bid.cars: поле года не найдено")
+    except Exception as e:
+        logger.warning(f"bid.cars: ошибка ввода года: {e}")
+
+
+def _get_lot_urls(driver, vehicle_type: str, brand: str, model: str, min_year: int = 2015) -> list[str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.keys import Keys
 
     driver.get("https://bid.cars/ru/search")
     time.sleep(6)
 
-    # Ждём загрузки формы
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".dropdown-toggle"))
@@ -140,39 +268,18 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
     except Exception:
         pass
 
-    # Год "С" — ищем поле и вводим через JS (надёжнее всего)
-    try:
-        # Пробуем найти все инпуты на странице и найти поле года
-        all_inputs = driver.find_elements(By.TAG_NAME, "input")
-        year_inp = None
-        for inp in all_inputs:
-            ph = (inp.get_attribute("placeholder") or "")
-            nm = (inp.get_attribute("name") or "").lower()
-            if ph.strip() in ("С", "с", "From") or "year_from" in nm or "yearfrom" in nm:
-                year_inp = inp
-                break
-        # Если не нашли по placeholder — берём первый числовой input
-        if not year_inp:
-            for inp in all_inputs:
-                if inp.get_attribute("type") in ("number",):
-                    year_inp = inp
-                    break
+    # Порядок: 1. Тип ТС → 2. Год → 3. Марка → 4. Модель → 5. Поиск
 
-        if year_inp:
-            driver.execute_script("arguments[0].value = arguments[1];", year_inp, str(min_year))
-            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", year_inp)
-            driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", year_inp)
-            time.sleep(0.5)
-            logger.info(f"bid.cars: год от {min_year} установлен через JS")
-        else:
-            logger.warning(f"bid.cars: поле года не найдено")
-    except Exception as e:
-        logger.warning(f"bid.cars: ошибка ввода года: {e}")
+    # 1. Тип ТС
+    _select_type_dropdown(driver, vehicle_type)
+    time.sleep(1)
 
-    # Марка — через дропдаун
+    # 2. Год "С"
+    _set_year(driver, min_year)
+
+    # 3. Марка
     ok = _select_dropdown(driver, ".search_make_filter .dropdown-toggle", brand)
     if not ok:
-        # Пробуем найти любой дропдаун с маркой
         try:
             toggles = driver.find_elements(By.CSS_SELECTOR, ".dropdown-toggle")
             for toggle in toggles:
@@ -200,12 +307,12 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         return []
     time.sleep(1)
 
-    # Модель
+    # 4. Модель
     if model:
         _select_dropdown(driver, ".search_model_filter .dropdown-toggle", model)
         time.sleep(1)
 
-    # Кнопка поиска
+    # 5. Кнопка поиска
     try:
         search_btn = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary[type='submit']"))
@@ -242,7 +349,6 @@ def _get_lot_urls(driver, brand: str, model: str, min_year: int = 2015) -> list[
         if not new_on_page:
             break
 
-        # Ищем кнопку следующей страницы
         next_found = False
         try:
             next_btns = driver.find_elements(By.CSS_SELECTOR, "a.page-link, a[aria-label='Next'], .pagination .next a")
@@ -332,7 +438,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     driver.execute_script("window.scrollTo(0, 0);")
     time.sleep(1)
 
-    # Заголовок
     title = brand
     try:
         el = driver.find_element(By.CSS_SELECTOR, "h2.title_lot")
@@ -352,7 +457,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
         except Exception:
             pass
 
-    # Год
     year = datetime.now().year
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
@@ -372,13 +476,11 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
                 year = int(word)
                 break
 
-    # Фильтр по году
     min_year = filters.get("_min_year", 2015)
     if year < min_year:
         logger.debug(f"Пропускаем {title}: год {year} < {min_year}")
         return None
 
-    # Дата аукциона — пропускаем прошедшие
     sale_dt = _parse_auction_date(driver)
     if sale_dt and sale_dt.date() < datetime.now().date():
         logger.debug(f"Пропускаем {title}: аукцион {sale_dt.date()} уже прошёл")
@@ -387,7 +489,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     timer_str = _format_timer(sale_dt) if sale_dt else ""
     sale_date_str = sale_dt.strftime("%d.%m.%Y %H:%M") if sale_dt else ""
 
-    # Цена
     price = 0.0
     try:
         el = driver.find_element(By.CSS_SELECTOR, ".price.current_bid")
@@ -411,7 +512,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
                     except Exception:
                         pass
 
-    # Повреждения
     damage = "Нет данных"
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
@@ -424,7 +524,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Пробег
     odometer = ""
     try:
         for opt in driver.find_elements(By.CSS_SELECTOR, ".options-list .option"):
@@ -437,7 +536,6 @@ def _parse_lot_page(driver, url: str, brand: str, filters: dict) -> dict | None:
     except Exception:
         pass
 
-    # Фото
     images = []
     try:
         for img in driver.find_elements(By.CSS_SELECTOR, "#productCarousel .f-carousel__slide img"):

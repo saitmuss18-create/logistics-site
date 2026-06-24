@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 SETTINGS_FILE = Path("settings.json")
 
+ALL_VEHICLE_TYPES = ["Автомобиль", "Мотоцикл", "ATV", "Гидроцикл", "Снегоход", "Лодка"]
+
 ALL_BRANDS = [
     "Toyota", "Lexus", "BMW", "Mercedes", "Hyundai",
     "Kia", "Honda", "Nissan", "Audi", "Chevrolet",
@@ -42,7 +44,8 @@ def load_settings() -> dict:
             return json.load(f)
     return {
         "max_year_age": 10, "max_price_usd": 20000, "min_bids": 5,
-        "brands": ALL_BRANDS[:5], "models": [], "check_interval_hours": 6
+        "brands": ALL_BRANDS[:5], "models": [], "check_interval_hours": 6,
+        "vehicle_types": ["Автомобиль"]
     }
 
 
@@ -90,7 +93,10 @@ def filters_keyboard():
     s = load_settings()
     model_count = len(s.get("models", []))
     model_label = f"✅ {model_count} выбрано" if model_count else "Все модели"
+    vtypes = s.get("vehicle_types", ["Автомобиль"])
+    vtype_label = ", ".join(vtypes) if vtypes else "Автомобиль"
     return [
+        [{"text": f"🚙 Тип ТС: {vtype_label}", "callback_data": "set_vehicle_types"}],
         [{"text": f"📅 Возраст: не старше {s['max_year_age']} лет", "callback_data": "set_year_age"}],
         [{"text": f"💰 Макс. цена: ${s['max_price_usd']:,}", "callback_data": "set_price"}],
         [{"text": f"🔨 Мин. ставок: {s['min_bids']}", "callback_data": "set_bids"}],
@@ -99,6 +105,17 @@ def filters_keyboard():
         [{"text": f"🔍 Модели: {model_label}", "callback_data": "set_models_brands"}],
         [{"text": "◀️ Назад", "callback_data": "menu_back"}],
     ]
+
+
+def vehicle_types_keyboard():
+    s = load_settings()
+    selected = s.get("vehicle_types", ["Автомобиль"])
+    rows = []
+    for vtype in ALL_VEHICLE_TYPES:
+        mark = "✅" if vtype in selected else "☐"
+        rows.append([{"text": f"{mark} {vtype}", "callback_data": f"vtype_{vtype}"}])
+    rows.append([{"text": "◀️ Назад", "callback_data": "menu_filters"}])
+    return rows
 
 
 def brands_keyboard():
@@ -149,8 +166,10 @@ def status_text():
     brands = ", ".join(s.get("brands", []))
     models = s.get("models", [])
     model_text = "\n".join(f"  • {m.split(':')[1]}" for m in models) if models else "  Все модели"
+    vtypes = ", ".join(s.get("vehicle_types", ["Автомобиль"]))
     return (
         f"📊 *Текущие настройки:*\n\n"
+        f"🚙 Типы ТС: {vtypes}\n"
         f"📅 Год: от {min_year} (не старше {s['max_year_age']} лет)\n"
         f"💰 Макс. цена: ${s['max_price_usd']:,}\n"
         f"🔨 Мин. ставок: {s['min_bids']}\n"
@@ -254,6 +273,23 @@ async def handle_callback(session, cb):
     elif data == "set_interval":
         _waiting_for[chat_id] = "interval"
         await send(session, chat_id, "⏰ Введи интервал проверки в часах (например: *6*)")
+
+    elif data == "set_vehicle_types":
+        await edit(session, chat_id, msg_id, "🚙 *Выбери типы транспортных средств:*", vehicle_types_keyboard())
+
+    elif data.startswith("vtype_"):
+        vtype = data[6:]
+        s = load_settings()
+        vtypes = s.get("vehicle_types", ["Автомобиль"])
+        if vtype in vtypes:
+            vtypes.remove(vtype)
+        else:
+            vtypes.append(vtype)
+        if not vtypes:
+            vtypes = ["Автомобиль"]
+        s["vehicle_types"] = vtypes
+        save_settings(s)
+        await edit(session, chat_id, msg_id, "🚙 *Выбери типы транспортных средств:*", vehicle_types_keyboard())
 
     elif data == "set_brands":
         await edit(session, chat_id, msg_id, "🚗 *Выбери марки авто:*", brands_keyboard())
