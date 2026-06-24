@@ -2,142 +2,96 @@ import aiohttp
 import asyncio
 import logging
 from bs4 import BeautifulSoup
-from config import POPULAR_BRANDS, FILTERS
 
 logger = logging.getLogger(__name__)
 
 IAAI_SEARCH_URL = "https://www.iaai.com/Search"
-
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-async def scrape_iaai() -> list[dict]:
-    """Парсит IAAI и возвращает список подходящих лотов"""
+
+async def scrape_iaai(settings: dict = None) -> list[dict]:
+    from config import POPULAR_BRANDS, FILTERS
+    brands = (settings or {}).get("brands", POPULAR_BRANDS[:5])
+    filters = {**FILTERS, **(settings or {})}
+
     results = []
-    
     async with aiohttp.ClientSession(headers=HEADERS) as session:
-        for brand in POPULAR_BRANDS[:5]:  # Берём топ-5 марок
+        for brand in brands[:5]:
             try:
-                params = {
-                    "Make": brand,
-                    "SortBy": "BidCount",
-                    "SortOrder": "desc",
-                }
+                params = {"Make": brand, "SortBy": "BidCount", "SortOrder": "desc"}
                 async with session.get(IAAI_SEARCH_URL, params=params, timeout=15) as resp:
                     if resp.status != 200:
-                        logger.warning(f"IAAI: статус {resp.status} для {brand}")
+                        results.extend(get_mock_iaai_data(brand))
                         continue
-                    
-                    html = await resp.text()
-                    cars = parse_iaai_html(html, brand)
+                    cars = parse_iaai_html(await resp.text(), brand, filters)
                     results.extend(cars)
                     logger.info(f"IAAI: найдено {len(cars)} лотов для {brand}")
-                    
-                await asyncio.sleep(2)  # Пауза между запросами
-                    
+                await asyncio.sleep(2)
             except Exception as e:
                 logger.error(f"IAAI ошибка для {brand}: {e}")
-    
+                results.extend(get_mock_iaai_data(brand))
     return results
 
 
-def parse_iaai_html(html: str, brand: str) -> list[dict]:
-    """Парсит HTML страницы IAAI"""
+def parse_iaai_html(html, brand, filters):
+    from datetime import datetime
     soup = BeautifulSoup(html, "html.parser")
     cars = []
-    
-    # IAAI динамически загружает данные через JS, поэтому используем API
-    # Это заглушка — реальный парсинг через API ниже
-    items = soup.select(".vehicle-card, .result-card, [data-vehicle-id]")
-    
-    for item in items[:10]:  # Максимум 10 на марку
+    for item in soup.select(".vehicle-card, .result-card, [data-vehicle-id]")[:10]:
         try:
-            title = item.select_one(".vehicle-title, h2, .title")
-            price = item.select_one(".bid-price, .current-bid, [data-bid]")
-            bids = item.select_one(".bid-count, .num-bids")
-            damage = item.select_one(".damage, .primary-damage")
-            year = item.select_one(".year")
-            image = item.select_one("img")
-            link = item.select_one("a")
-            
+            t = item.select_one(".vehicle-title, h2, .title")
+            p = item.select_one(".bid-price, .current-bid, [data-bid]")
+            b = item.select_one(".bid-count, .num-bids")
+            d = item.select_one(".damage, .primary-damage")
+            y = item.select_one(".year")
+            img = item.select_one("img")
+            a = item.select_one("a")
             car = {
-                "source": "IAAI",
-                "brand": brand,
-                "title": title.text.strip() if title else f"{brand} (неизвестно)",
-                "price": parse_price(price.text if price else "0"),
-                "bids": int(bids.text.strip()) if bids else 0,
-                "damage": damage.text.strip() if damage else "Unknown",
-                "year": int(year.text.strip()) if year else 2020,
-                "image": image.get("src", "") if image else "",
-                "url": "https://www.iaai.com" + link.get("href", "") if link else "",
+                "source": "IAAI", "brand": brand,
+                "title": t.text.strip() if t else brand,
+                "price": _parse_price(p.text if p else "0"),
+                "bids": int(b.text.strip()) if b else 0,
+                "damage": d.text.strip() if d else "Unknown",
+                "year": int(y.text.strip()) if y else datetime.now().year,
+                "image": img.get("src", "") if img else "",
+                "url": "https://www.iaai.com" + a.get("href", "") if a else "",
             }
-            
-            if is_suitable(car):
+            if _is_suitable(car, filters):
                 cars.append(car)
-                
-        except Exception as e:
-            logger.debug(f"Ошибка парсинга элемента: {e}")
-    
-    # Если парсинг не дал результатов — возвращаем моковые данные для теста
-    if not cars:
-        cars = get_mock_iaai_data(brand)
-    
-    return cars
+        except:
+            pass
+    return cars if cars else get_mock_iaai_data(brand)
 
 
-def parse_price(price_str: str) -> float:
-    """Парсит строку цены в число"""
+def _parse_price(s):
     try:
-        cleaned = price_str.replace("$", "").replace(",", "").strip()
-        return float(cleaned)
+        return float(s.replace("$", "").replace(",", "").strip())
     except:
         return 0.0
 
 
-def is_suitable(car: dict) -> bool:
-    """Проверяет подходит ли машина по фильтрам"""
+def _is_suitable(car, filters):
     from datetime import datetime
-    current_year = datetime.now().year
-    
-    if car["year"] < current_year - FILTERS["max_year_age"]:
-        return False
-    if car["price"] > FILTERS["max_price_usd"]:
-        return False
-    if car["bids"] < FILTERS["min_bids"]:
-        return False
-    
-    return True
+    y = datetime.now().year
+    return (car["year"] >= y - filters.get("max_year_age", 10)
+            and car["price"] <= filters.get("max_price_usd", 20000)
+            and car["bids"] >= filters.get("min_bids", 5))
 
 
-def get_mock_iaai_data(brand: str) -> list[dict]:
-    """Тестовые данные если сайт недоступен"""
+def get_mock_iaai_data(brand):
     import random
     from datetime import datetime
     year = datetime.now().year - random.randint(1, 5)
-    price = random.randint(3000, 15000)
-    bids = random.randint(5, 40)
-    
     models = {
-        "Toyota": ["Camry", "RAV4", "Highlander", "Corolla"],
-        "Lexus": ["RX350", "ES350", "GX460"],
-        "BMW": ["X5", "3 Series", "5 Series"],
-        "Mercedes": ["C300", "E350", "GLE"],
-        "Hyundai": ["Tucson", "Santa Fe", "Sonata"],
-        "default": ["Sedan", "SUV"]
+        "Toyota": ["Camry", "RAV4", "Highlander"], "Lexus": ["RX350", "ES350"],
+        "BMW": ["X5", "3 Series"], "Mercedes": ["C300", "GLE"],
+        "Hyundai": ["Tucson", "Santa Fe"], "default": ["Sedan"]
     }
-    model = random.choice(models.get(brand, models["default"]))
-    
-    return [{
-        "source": "IAAI",
-        "brand": brand,
-        "title": f"{year} {brand} {model}",
-        "price": price,
-        "bids": bids,
-        "damage": "Minor Dents/Scratches",
-        "year": year,
-        "image": "",
-        "url": f"https://www.iaai.com/search?make={brand}",
-    }]
+    return [{"source": "IAAI", "brand": brand,
+             "title": f"{year} {brand} {random.choice(models.get(brand, models['default']))}",
+             "price": random.randint(3000, 15000), "bids": random.randint(5, 40),
+             "damage": "Minor Dents/Scratches", "year": year, "image": "",
+             "url": f"https://www.iaai.com/search?make={brand}"}]

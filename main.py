@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from scheduler import run_scheduler
+from scheduler import run_all
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,4 +9,5 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     print("🚀 MFR AUTO Auction Bot запущен...")
-    asyncio.run(run_scheduler())
+    print("🎛 Админ-панель: напиши /start боту в личку")
+    asyncio.run(run_all())

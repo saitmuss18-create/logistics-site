@@ -6,63 +6,58 @@ from scrapers.copart_scraper import scrape_copart
 from scrapers.bidcars_scraper import scrape_bidcars
 from analyzer.market_analyzer import analyze_cars
 from publisher.telegram_publisher import publish_to_telegram
-from config import CHECK_INTERVAL_HOURS
+from admin_bot import run_admin_bot, load_settings
 
 logger = logging.getLogger(__name__)
 
 
 async def run_once():
-    """Один цикл: парсинг → анализ → публикация"""
+    s = load_settings()
     logger.info(f"⏰ Запуск цикла: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
-    
-    # 1. Парсим все аукционы параллельно
     logger.info("📡 Парсим аукционы...")
+
     iaai_cars, copart_cars, bidcars_cars = await asyncio.gather(
-        scrape_iaai(),
-        scrape_copart(),
-        scrape_bidcars(),
-        return_exceptions=True
+        scrape_iaai(s), scrape_copart(s), scrape_bidcars(s), return_exceptions=True
     )
-    
+
     all_cars = []
     for result in [iaai_cars, copart_cars, bidcars_cars]:
         if isinstance(result, list):
             all_cars.extend(result)
         else:
             logger.error(f"Ошибка парсинга: {result}")
-    
+
     logger.info(f"📋 Всего найдено лотов: {len(all_cars)}")
-    
     if not all_cars:
-        logger.warning("Нет данных для анализа")
         return
-    
-    # 2. Анализируем
+
     logger.info("🧠 Анализируем рынок Бишкека...")
     top_cars = await analyze_cars(all_cars)
     logger.info(f"✅ Топ выгодных машин: {len(top_cars)}")
-    
     if not top_cars:
-        logger.warning("Нет подходящих машин для публикации")
         return
-    
-    # 3. Публикуем в Telegram
+
     logger.info("📢 Публикуем в Telegram...")
     await publish_to_telegram(top_cars)
-    
     logger.info("🎉 Цикл завершён!")
 
 
 async def run_scheduler():
-    """Запускает бот по расписанию"""
-    logger.info(f"🤖 Бот запущен. Интервал: каждые {CHECK_INTERVAL_HOURS} часов")
-    
+    s = load_settings()
+    interval = s.get("check_interval_hours", 6)
+    logger.info(f"🤖 Бот запущен. Интервал: каждые {interval} часов")
+
     while True:
         try:
+            s = load_settings()
             await run_once()
         except Exception as e:
-            logger.error(f"Критическая ошибка в цикле: {e}")
-        
-        next_run = CHECK_INTERVAL_HOURS * 3600
-        logger.info(f"💤 Следующий запуск через {CHECK_INTERVAL_HOURS} часов")
-        await asyncio.sleep(next_run)
+            logger.error(f"Критическая ошибка: {e}")
+        s = load_settings()
+        interval = s.get("check_interval_hours", 6)
+        logger.info(f"💤 Следующий запуск через {interval} часов")
+        await asyncio.sleep(interval * 3600)
+
+
+async def run_all():
+    await asyncio.gather(run_scheduler(), run_admin_bot())

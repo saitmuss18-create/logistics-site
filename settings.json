@@ -1,0 +1,7 @@
+{
+  "max_year_age": 10,
+  "max_price_usd": 20000,
+  "min_bids": 5,
+  "brands": ["Toyota", "Lexus", "BMW", "Mercedes", "Hyundai"],
+  "check_interval_hours": 6
+}
