@@ -134,14 +134,30 @@ def _search_lots(driver, brand: str, model: str, min_year: int, vehicle_types: l
     )
 
     driver.get(url)
-    time.sleep(7)
+    time.sleep(10)
 
-    try:
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/lot/']"))
-        )
-    except Exception:
-        pass
+    # Ждём пока Angular загрузит результаты
+    for sel in [
+        "a[href*='/lot/']",
+        "span.lot-number",
+        ".lot-results-row",
+        "table.lot-list tbody tr",
+        "[class*='lot-number']",
+    ]:
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, sel))
+            )
+            logger.info(f"Copart: нашли элементы '{sel}' для {query}")
+            break
+        except Exception:
+            pass
+
+    # Отладка: логируем заголовок и кол-во ссылок
+    logger.info(f"Copart: title='{driver.title}', url={driver.current_url[:80]}")
+    all_anchors = driver.find_elements(By.TAG_NAME, "a")
+    lot_anchors = [a for a in all_anchors if "/lot/" in (a.get_attribute("href") or "")]
+    logger.info(f"Copart: на странице всего {len(all_anchors)} ссылок, с /lot/: {len(lot_anchors)}")
 
     all_urls = []
     page = 1
@@ -151,17 +167,29 @@ def _search_lots(driver, brand: str, model: str, min_year: int, vehicle_types: l
         for pos in range(0, 5000, 700):
             driver.execute_script(f"window.scrollTo(0, {pos});")
             time.sleep(0.15)
-        time.sleep(1.5)
+        time.sleep(2)
 
-        anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/lot/']")
+        # Пробуем разные селекторы для лотов
+        page_hrefs = set()
+        for sel in ["a[href*='/lot/']", "a[ng-href*='/lot/']"]:
+            for a in driver.find_elements(By.CSS_SELECTOR, sel):
+                href = (a.get_attribute("href") or "").split("?")[0].rstrip("/")
+                if href and "/lot/" in href:
+                    page_hrefs.add(href)
+
+        # Если не нашли через href — ищем через span.lot-number
+        if not page_hrefs:
+            for span in driver.find_elements(By.CSS_SELECTOR, "span.lot-number, [class*='lot-number']"):
+                num = span.text.strip().replace(" ", "")
+                if num.isdigit():
+                    page_hrefs.add(f"https://www.copart.com/lot/{num}")
+
         seen_this = set()
         page_urls = []
-        for a in anchors:
-            href = (a.get_attribute("href") or "").split("?")[0].rstrip("/")
-            if href and "/lot/" in href and href not in seen_this:
+        for href in page_hrefs:
+            if href not in seen_this and href not in all_urls:
                 seen_this.add(href)
-                if href not in all_urls:
-                    page_urls.append(href)
+                page_urls.append(href)
 
         all_urls.extend(page_urls)
         logger.info(f"Copart: на стр.{page} — {len(page_urls)} новых лотов")
