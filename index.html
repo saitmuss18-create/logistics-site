@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MFR Logistics — Международные грузоперевозки под ключ</title>
+  <meta name="description" content="Морские грузоперевозки, таможенное оформление и доставка автомобилей из США. Работаем с Copart и IAAI. Надёжно, прозрачно, под ключ." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ──────────────────────── HEADER ──────────────────────────── -->
+<header class="header" id="header">
+  <div class="container header__inner">
+    <a href="#" class="logo">
+      <span class="logo__mark">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M4 20L14 4L24 20H4Z" fill="currentColor" opacity=".9"/>
+          <path d="M8 20H20L14 10L8 20Z" fill="#0d1117" opacity=".35"/>
+        </svg>
+      </span>
+      <span class="logo__text">MFR<span class="accent"> Logistics</span></span>
+    </a>
+    <nav class="nav" id="nav">
+      <a href="#services"   class="nav__link">Услуги</a>
+      <a href="#routes"     class="nav__link">Маршруты</a>
+      <a href="#how"        class="nav__link">Как работаем</a>
+      <a href="#calculator" class="nav__link">Расчёт</a>
+      <a href="#contact"    class="nav__link">Контакты</a>
+    </nav>
+    <a href="#calculator" class="btn btn--sm header__cta">Рассчитать доставку</a>
+    <button class="burger" id="burger" aria-label="Меню">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<!-- ──────────────────────── HERO ──────────────────────────── -->
+<section class="hero">
+  <div class="hero__bg"></div>
+  <div class="container hero__inner">
+    <div class="hero__content">
+      <div class="hero__badge">
+        <span class="badge__dot"></span>
+        🚢 USA · Copart · IAAI · Доставка в СНГ
+      </div>
+      <h1 class="hero__title">Доставим ваш груз<br><span class="accent">из любой точки США</span></h1>
+      <p class="hero__sub">Специализируемся на транспортировке автомобилей с американских аукционов. Полное сопровождение: вывоз, морская доставка, таможня, передача.</p>
+      <div class="hero__actions">
+        <a href="#calculator" class="btn btn--primary btn--lg">Рассчитать стоимость</a>
+        <a href="#contact" class="btn btn--ghost btn--lg">Связаться с нами</a>
+      </div>
+      <div class="hero__stats">
+        <div class="stat">
+          <span class="stat__num">1 200+</span>
+          <span class="stat__label">авто доставлено</span>
+        </div>
+        <div class="stat">
+          <span class="stat__num">7 лет</span>
+          <span class="stat__label">на рынке</span>
+        </div>
+        <div class="stat">
+          <span class="stat__num">45 дней</span>
+          <span class="stat__label">среднее время</span>
+        </div>
+        <div class="stat">
+          <span class="stat__num">0</span>
+          <span class="stat__label">потерянных грузов</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero__visual">
+      <div class="ship-card">
+        <div class="ship-card__header">
+          <span class="ship-status ship-status--moving">В пути</span>
+          <span class="ship-card__flag">🇺🇸 → 🇷🇺</span>
+        </div>
+        <div class="ship-card__route">
+          <div class="route-point">
+            <div class="route-dot route-dot--done"></div>
+            <div>
+              <p class="route-city">Los Angeles, CA</p>
+              <p class="route-label">Порт отправки</p>
+            </div>
+          </div>
+          <div class="route-line">
+            <div class="route-progress"></div>
+          </div>
+          <div class="route-point">
+            <div class="route-dot"></div>
+            <div>
+              <p class="route-city">Владивосток / Новороссийск</p>
+              <p class="route-label">Порт прибытия</p>
+            </div>
+          </div>
+        </div>
+        <div class="ship-card__cargo">
+          <div class="cargo-item">
+            <span class="cargo-icon">🚗</span>
+            <div>
+              <p class="cargo-name">BMW 5 Series 2020</p>
+              <p class="cargo-vin">VIN: 5UXCR6C57KLL45xxx</p>
+            </div>
+            <span class="cargo-tag">Copart</span>
+          </div>
+        </div>
+        <div class="ship-card__eta">
+          <span>⏱ Ожидаемое прибытие:</span>
+          <strong id="eta-date">загружается...</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hero__scroll">
+    <span>Прокрутите вниз</span>
+    <div class="scroll-arrow"></div>
+  </div>
+</section>
+
+<!-- ──────────────────────── TRUST BAR ──────────────────────────── -->
+<div class="trust-bar">
+  <div class="container trust-bar__inner">
+    <div class="trust-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Страхование груза
+    </div>
+    <div class="trust-sep"></div>
+    <div class="trust-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Трекинг в реальном времени
+    </div>
+    <div class="trust-sep"></div>
+    <div class="trust-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      Лицензированный брокер
+    </div>
+    <div class="trust-sep"></div>
+    <div class="trust-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      Все виды грузов
+    </div>
+    <div class="trust-sep"></div>
+    <div class="trust-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.64 19.79 19.79 0 01.22 1.05 2 2 0 012.22 3h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 10.09a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      Поддержка 24/7
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────────── SERVICES ──────────────────────────── -->
+<section class="section" id="services">
+  <div class="container">
+    <div class="section__head">
+      <div class="section__badge">Что мы делаем</div>
+      <h2 class="section__title">Полный спектр логистических услуг</h2>
+      <p class="section__sub">От вывоза с аукциона до передачи ключей — всё под контролем</p>
+    </div>
+    <div class="services-grid">
+      <div class="service-card" data-index="01">
+        <div class="service-card__icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </div>
+        <h3>Вывоз с аукциона</h3>
+        <p>Забираем автомобиль с Copart, IAAI, BidCars. Доставляем на склад консолидации у порта. Работаем с любым штатом США.</p>
+        <div class="service-card__tags">
+          <span class="stag">Copart</span>
+          <span class="stag">IAAI</span>
+          <span class="stag">BidCars</span>
+        </div>
+      </div>
+      <div class="service-card" data-index="02">
+        <div class="service-card__icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+        </div>
+        <h3>Морская доставка</h3>
+        <p>Контейнерные перевозки (20', 40') и RO-RO из портов США. Маршруты: Владивосток, Новороссийск, Котка, Клайпеда.</p>
+        <div class="service-card__tags">
+          <span class="stag">Container</span>
+          <span class="stag">RO-RO</span>
+        </div>
+      </div>
+      <div class="service-card" data-index="03">
+        <div class="service-card__icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><polyline points="23 11 17 11"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </div>
+        <h3>Таможенное оформление</h3>
+        <p>Полная подготовка документов, расчёт и оплата пошлин, сертификация. Работаем как брокер — без посредников.</p>
+        <div class="service-card__tags">
+          <span class="stag">ЕАЭС</span>
+          <span class="stag">ФТС России</span>
+        </div>
+      </div>
+      <div class="service-card" data-index="04">
+        <div class="service-card__icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <h3>Проверка и фото</h3>
+        <p>Инспекция авто при получении с аукциона. Детальная фотосъёмка повреждений, состояния кузова и салона.</p>
+        <div class="service-card__tags">
+          <span class="stag">100+ фото</span>
+          <span class="stag">Видео</span>
+        </div>
+      </div>
+      <div class="service-card" data-index="05">
+        <div class="service-card__icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <h3>Доставка до города</h3>
+        <p>После таможни доставляем автомобиль до вашего города по территории России и СНГ. Автовоз или эвакуатор.</p>
+        <div class="service-card__tags">
+          <span class="stag">РФ</span>
+          <span class="stag">СНГ</span>
+        </div>
+      </div>
+      <div class="service-card" data-index="06">
+        <div class="service-card__icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </div>
+        <h3>Документальное сопровождение</h3>
+        <p>Оформляем title, invoice, bill of lading, СБКТС, ОТТС. Все документы для постановки на учёт в РФ.</p>
+        <div class="service-card__tags">
+          <span class="stag">Title</span>
+          <span class="stag">СБКТС</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── ROUTES ──────────────────────────── -->
+<section class="section section--dark" id="routes">
+  <div class="container">
+    <div class="section__head">
+      <div class="section__badge section__badge--light">Маршруты</div>
+      <h2 class="section__title">Работаем по всем ключевым маршрутам</h2>
+      <p class="section__sub">США → Россия, Казахстан, Беларусь и другие страны СНГ</p>
+    </div>
+    <div class="routes-grid">
+      <div class="route-card route-card--featured">
+        <div class="route-card__ports">
+          <div class="port">
+            <div class="port__flag">🇺🇸</div>
+            <div class="port__name">Los Angeles / Houston</div>
+            <div class="port__country">США</div>
+          </div>
+          <div class="route-arrow">
+            <svg width="48" height="16" viewBox="0 0 48 16" fill="none">
+              <path d="M0 8h44M36 2l8 6-8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>~30–35 дней</span>
+          </div>
+          <div class="port">
+            <div class="port__flag">🇷🇺</div>
+            <div class="port__name">Владивосток</div>
+            <div class="port__country">Россия</div>
+          </div>
+        </div>
+        <div class="route-card__info">
+          <span class="route-badge">Популярный</span>
+          <span class="route-type">RO-RO / Container</span>
+        </div>
+      </div>
+      <div class="route-card">
+        <div class="route-card__ports">
+          <div class="port">
+            <div class="port__flag">🇺🇸</div>
+            <div class="port__name">Baltimore / NJ</div>
+            <div class="port__country">США</div>
+          </div>
+          <div class="route-arrow">
+            <svg width="48" height="16" viewBox="0 0 48 16" fill="none">
+              <path d="M0 8h44M36 2l8 6-8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>~40–45 дней</span>
+          </div>
+          <div class="port">
+            <div class="port__flag">🇷🇺</div>
+            <div class="port__name">Новороссийск</div>
+            <div class="port__country">Россия</div>
+          </div>
+        </div>
+        <div class="route-card__info">
+          <span class="route-type">Container</span>
+        </div>
+      </div>
+      <div class="route-card">
+        <div class="route-card__ports">
+          <div class="port">
+            <div class="port__flag">🇺🇸</div>
+            <div class="port__name">Newark / Savannah</div>
+            <div class="port__country">США</div>
+          </div>
+          <div class="route-arrow">
+            <svg width="48" height="16" viewBox="0 0 48 16" fill="none">
+              <path d="M0 8h44M36 2l8 6-8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>~45–50 дней</span>
+          </div>
+          <div class="port">
+            <div class="port__flag">🇫🇮</div>
+            <div class="port__name">Котка / Хельсинки</div>
+            <div class="port__country">Финляндия → КЗ/РФ</div>
+          </div>
+        </div>
+        <div class="route-card__info">
+          <span class="route-type">RO-RO + авто</span>
+        </div>
+      </div>
+      <div class="route-card">
+        <div class="route-card__ports">
+          <div class="port">
+            <div class="port__flag">🇺🇸</div>
+            <div class="port__name">Любой штат</div>
+            <div class="port__country">США</div>
+          </div>
+          <div class="route-arrow">
+            <svg width="48" height="16" viewBox="0 0 48 16" fill="none">
+              <path d="M0 8h44M36 2l8 6-8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>~50–60 дней</span>
+          </div>
+          <div class="port">
+            <div class="port__flag">🇰🇿</div>
+            <div class="port__name">Алматы / Астана</div>
+            <div class="port__country">Казахстан</div>
+          </div>
+        </div>
+        <div class="route-card__info">
+          <span class="route-type">Container</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── HOW IT WORKS ──────────────────────── -->
+<section class="section section--light" id="how">
+  <div class="container">
+    <div class="section__head">
+      <div class="section__badge">Процесс</div>
+      <h2 class="section__title">Как мы работаем</h2>
+      <p class="section__sub">Прозрачный процесс от заявки до получения автомобиля</p>
+    </div>
+    <div class="timeline">
+      <div class="timeline__item">
+        <div class="timeline__step">
+          <div class="step-num">1</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="timeline__body">
+          <h3>Заявка и расчёт</h3>
+          <p>Отправляете ссылку на лот или номер VIN. Мы рассчитываем полную стоимость: вывоз, фрахт, таможня, доставка. Фиксируем цену в договоре.</p>
+          <div class="timeline__meta">⏱ 1–2 часа</div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__step">
+          <div class="step-num">2</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="timeline__body">
+          <h3>Оплата и старт</h3>
+          <p>Вы оплачиваете аванс (30–50%). Мы начинаем работу: организуем вывоз авто с аукциона на склад-хаб в США.</p>
+          <div class="timeline__meta">⏱ 1–5 дней</div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__step">
+          <div class="step-num">3</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="timeline__body">
+          <h3>Осмотр и отправка</h3>
+          <p>Инспектируем авто на складе, делаем фотоотчёт и отправляем вам. Загружаем на судно и высылаем трекинг-номер.</p>
+          <div class="timeline__meta">⏱ 5–14 дней</div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__step">
+          <div class="step-num">4</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="timeline__body">
+          <h3>Морской переход</h3>
+          <p>Судно в пути — вы отслеживаете местонахождение через личный кабинет или по запросу. Страховка включена.</p>
+          <div class="timeline__meta">⏱ 25–45 дней</div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__step">
+          <div class="step-num">5</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="timeline__body">
+          <h3>Прибытие и таможня</h3>
+          <p>Встречаем груз в порту. Оформляем таможенную декларацию, оплачиваем пошлины, получаем СБКТС и ОТТС.</p>
+          <div class="timeline__meta">⏱ 5–10 дней</div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__step">
+          <div class="step-num">6</div>
+        </div>
+        <div class="timeline__body">
+          <h3>Доставка и передача</h3>
+          <p>Доставляем автомобиль в ваш город. Передаём полный пакет документов. Помогаем с постановкой на учёт.</p>
+          <div class="timeline__meta">⏱ 3–7 дней</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── CALCULATOR ──────────────────────────── -->
+<section class="section" id="calculator">
+  <div class="container">
+    <div class="section__head">
+      <div class="section__badge">Калькулятор</div>
+      <h2 class="section__title">Рассчитайте стоимость доставки</h2>
+      <p class="section__sub">Предварительный расчёт за несколько секунд — уточните детали у менеджера</p>
+    </div>
+    <div class="calc-wrap">
+      <div class="calc">
+        <div class="calc__row">
+          <div class="calc__field">
+            <label>Цена лота ($)</label>
+            <input type="number" id="lot-price" placeholder="12 000" min="0" />
+          </div>
+          <div class="calc__field">
+            <label>Объём двигателя (л)</label>
+            <input type="number" id="engine" placeholder="2.0" step="0.1" min="0.1" max="10" />
+          </div>
+        </div>
+        <div class="calc__row">
+          <div class="calc__field">
+            <label>Год выпуска</label>
+            <input type="number" id="year" placeholder="2019" min="1990" max="2026" />
+          </div>
+          <div class="calc__field">
+            <label>Тип топлива</label>
+            <select id="fuel">
+              <option value="petrol">Бензин</option>
+              <option value="diesel">Дизель</option>
+              <option value="hybrid">Гибрид</option>
+              <option value="electric">Электро</option>
+            </select>
+          </div>
+        </div>
+        <div class="calc__field">
+          <label>Маршрут доставки</label>
+          <select id="route">
+            <option value="vlad">США → Владивосток</option>
+            <option value="novo">США → Новороссийск</option>
+            <option value="kotka">США → Котка (Финляндия)</option>
+            <option value="kz">США → Казахстан</option>
+          </select>
+        </div>
+        <button class="btn btn--primary btn--full" id="calc-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Рассчитать
+        </button>
+      </div>
+      <div class="calc-result" id="calc-result">
+        <div class="calc-result__icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 7H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-3m-4 0V5a2 2 0 114 0v2m-4 0h4"/></svg>
+        </div>
+        <p class="calc-hint">Заполните параметры слева и нажмите «Рассчитать»</p>
+        <div id="result-rows" class="result-rows hidden"></div>
+        <p class="calc-note">* Расчёт ориентировочный. Таможенные ставки актуальны для физических лиц — резидентов РФ. Точную стоимость уточняйте у менеджера.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── WHY US ──────────────────────────── -->
+<section class="section section--dark" id="why">
+  <div class="container">
+    <div class="section__head">
+      <div class="section__badge section__badge--light">Преимущества</div>
+      <h2 class="section__title">Почему выбирают MFR Logistics</h2>
+    </div>
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="why-card__num">01</div>
+        <div class="why-card__icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3>Фиксированная цена</h3>
+        <p>Стоимость прописывается в договоре до начала работы. Никаких скрытых доплат и неожиданных расходов.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-card__num">02</div>
+        <div class="why-card__icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M13 12H3"/></svg>
+        </div>
+        <h3>Собственные агенты в США</h3>
+        <p>Наши партнёры работают во всех крупных штатах. Вывоз с любого аукционного двора в течение 24–48 часов.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-card__num">03</div>
+        <div class="why-card__icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 6l11 7L23 6M1 6v12a2 2 0 002 2h18a2 2 0 002-2V6"/></svg>
+        </div>
+        <h3>Онлайн-трекинг</h3>
+        <p>Отслеживайте статус груза в режиме реального времени. Уведомления на каждом этапе: вывоз, погрузка, порт.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-card__num">04</div>
+        <div class="why-card__icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3"/></svg>
+        </div>
+        <h3>Опыт 7 лет</h3>
+        <p>Более 1 200 автомобилей доставлено без единой потери. Знаем все подводные камни таможни и портовой логистики.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-card__num">05</div>
+        <div class="why-card__icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        </div>
+        <h3>Быстрые сроки</h3>
+        <p>Среднее время от выигрыша аукциона до получения авто — 45 дней. Экспресс-доставка от 30 дней по маршруту → Владивосток.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-card__num">06</div>
+        <div class="why-card__icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <h3>Личный менеджер</h3>
+        <p>За каждым клиентом закреплён персональный менеджер. Отвечаем в течение 30 минут в рабочее время и 24/7 в Telegram.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── CONTACT ──────────────────────────── -->
+<section class="section" id="contact">
+  <div class="container">
+    <div class="section__head">
+      <div class="section__badge">Контакты</div>
+      <h2 class="section__title">Получить консультацию</h2>
+      <p class="section__sub">Оставьте заявку — ответим в течение 30 минут и рассчитаем стоимость бесплатно</p>
+    </div>
+    <div class="contact-wrap">
+      <form class="contact-form" id="contact-form">
+        <div class="form-field">
+          <label>Ваше имя *</label>
+          <input type="text" id="c-name" placeholder="Иван Иванов" required />
+        </div>
+        <div class="form-field">
+          <label>Телефон или Telegram *</label>
+          <input type="text" id="c-phone" placeholder="+7 900 000 00 00" required />
+        </div>
+        <div class="form-field">
+          <label>Ссылка на лот или VIN</label>
+          <input type="text" id="c-lot" placeholder="https://www.copart.com/lot/..." />
+        </div>
+        <div class="form-field">
+          <label>Маршрут доставки</label>
+          <select id="c-route">
+            <option value="">Выберите маршрут</option>
+            <option>США → Владивосток</option>
+            <option>США → Новороссийск</option>
+            <option>США → Котка</option>
+            <option>США → Казахстан</option>
+            <option>Другой</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Комментарий</label>
+          <textarea id="c-comment" rows="3" placeholder="Дополнительные пожелания..."></textarea>
+        </div>
+        <button type="submit" class="btn btn--primary btn--full">Отправить заявку</button>
+        <p class="form-note">Нажимая кнопку, вы соглашаетесь с обработкой персональных данных</p>
+      </form>
+      <div class="contact-info">
+        <div class="contact-card">
+          <h3>Напишите нам</h3>
+          <a href="https://t.me/mfrlogistics" target="_blank" class="cinfo-link">
+            <div class="cinfo-icon cinfo-icon--tg">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.317 13.99l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.831.569z"/></svg>
+            </div>
+            <div>
+              <p class="cinfo-label">Telegram</p>
+              <p class="cinfo-val">@mfrlogistics</p>
+            </div>
+          </a>
+          <a href="https://wa.me/70000000000" target="_blank" class="cinfo-link">
+            <div class="cinfo-icon cinfo-icon--wa">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.555 4.116 1.527 5.845L.057 23.876l6.2-1.625A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.007-1.371l-.359-.214-3.68.965.981-3.595-.234-.369A9.818 9.818 0 012.182 12C2.182 6.575 6.575 2.182 12 2.182S21.818 6.575 21.818 12 17.425 21.818 12 21.818z"/></svg>
+            </div>
+            <div>
+              <p class="cinfo-label">WhatsApp</p>
+              <p class="cinfo-val">+7 (900) 000-00-00</p>
+            </div>
+          </a>
+          <a href="mailto:info@mfrlogistics.ru" class="cinfo-link">
+            <div class="cinfo-icon cinfo-icon--mail">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 01-2.06 0L2 7"/></svg>
+            </div>
+            <div>
+              <p class="cinfo-label">Email</p>
+              <p class="cinfo-val">info@mfrlogistics.ru</p>
+            </div>
+          </a>
+        </div>
+        <div class="contact-card contact-card--accent">
+          <div class="contact-card__icon">🕐</div>
+          <h4>Время работы</h4>
+          <p>Пн–Пт: 9:00 – 20:00 МСК</p>
+          <p>Сб–Вс: 10:00 – 18:00 МСК</p>
+          <p style="margin-top:12px; opacity:.7; font-size:14px;">Telegram доступен 24/7</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── FOOTER ──────────────────────────── -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer__top">
+      <div class="footer__brand">
+        <a href="#" class="logo">
+          <span class="logo__mark">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+              <path d="M4 20L14 4L24 20H4Z" fill="currentColor" opacity=".9"/>
+              <path d="M8 20H20L14 10L8 20Z" fill="#0d1117" opacity=".35"/>
+            </svg>
+          </span>
+          <span class="logo__text">MFR<span class="accent"> Logistics</span></span>
+        </a>
+        <p class="footer__desc">Международная логистика и доставка автомобилей из США под ключ.</p>
+      </div>
+      <div class="footer__links">
+        <div class="footer__col">
+          <h4>Услуги</h4>
+          <a href="#services">Вывоз с аукциона</a>
+          <a href="#services">Морская доставка</a>
+          <a href="#services">Таможенное оформление</a>
+          <a href="#services">Доставка по РФ</a>
+        </div>
+        <div class="footer__col">
+          <h4>Маршруты</h4>
+          <a href="#routes">США → Владивосток</a>
+          <a href="#routes">США → Новороссийск</a>
+          <a href="#routes">США → Котка</a>
+          <a href="#routes">США → Казахстан</a>
+        </div>
+        <div class="footer__col">
+          <h4>Компания</h4>
+          <a href="#how">Как работаем</a>
+          <a href="#why">Преимущества</a>
+          <a href="#calculator">Расчёт доставки</a>
+          <a href="#contact">Контакты</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <p>© 2024 MFR Logistics. Все права защищены.</p>
+      <div class="footer__socials">
+        <a href="https://t.me/mfrlogistics" target="_blank" aria-label="Telegram">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.317 13.99l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.831.569z"/></svg>
+        </a>
+        <a href="https://wa.me/70000000000" target="_blank" aria-label="WhatsApp">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.555 4.116 1.527 5.845L.057 23.876l6.2-1.625A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.007-1.371l-.359-.214-3.68.965.981-3.595-.234-.369A9.818 9.818 0 012.182 12C2.182 6.575 6.575 2.182 12 2.182S21.818 6.575 21.818 12 17.425 21.818 12 21.818z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="js/main.js"></script>
+</body>
+</html>
